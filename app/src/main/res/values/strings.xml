@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">PhantomScroll</string>
+    <string name="accessibility_service_description">PhantomScroll 自动滑动辅助服务。通过拟人化纵向微手势实现小说、漫画等长页面的高精度、流畅自动滚动。为了模拟手势，该服务需要模拟触控输入的权限。</string>
+    <string name="accessibility_service_label">PhantomScroll 自动滑动服务</string>
+</resources>
