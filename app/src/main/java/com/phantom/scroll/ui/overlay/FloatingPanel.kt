@@ -35,6 +35,8 @@ enum class PanelState {
 @Composable
 fun FloatingPanel(
     config: ScrollConfig,
+    panelState: PanelState,
+    onPanelStateChange: (PanelState) -> Unit,
     onUpdatePosition: (x: Int, y: Int) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -43,7 +45,6 @@ fun FloatingPanel(
     val screenWidth by config.screenWidth.collectAsState()
     val screenHeight by config.screenHeight.collectAsState()
 
-    var panelState by remember { mutableStateOf(PanelState.Expanded) }
     var isLeftEdge by remember { mutableStateOf(true) }
 
     // Floating window raw coordinates in WindowManager space
@@ -69,6 +70,28 @@ fun FloatingPanel(
     // Keep track of last seen screen dimensions to avoid redundant updates
     var lastScreenWidth by remember { mutableIntStateOf(screenWidth) }
     var lastScreenHeight by remember { mutableIntStateOf(screenHeight) }
+
+    LaunchedEffect(panelState) {
+        when (panelState) {
+            PanelState.Collapsed -> {
+                val targetX = if (isLeftEdge) 0 else screenWidth - touchTargetWidthPx
+                if (currentX != targetX) {
+                    currentX = targetX
+                    onUpdatePosition(targetX, currentY)
+                }
+            }
+            PanelState.Expanded -> {
+                val targetX = if (isLeftEdge) 0 else screenWidth - panelWidthPx
+                if (currentX != targetX) {
+                    currentX = targetX
+                    onUpdatePosition(targetX, currentY)
+                }
+            }
+            PanelState.Snapping -> {
+                // Snapping is animated
+            }
+        }
+    }
 
     LaunchedEffect(screenWidth, screenHeight) {
         if (screenWidth != lastScreenWidth || screenHeight != lastScreenHeight) {
@@ -104,11 +127,7 @@ fun FloatingPanel(
                     modifier = Modifier
                         .size(width = touchTargetWidth, height = touchTargetHeight)
                         .clickable {
-                            panelState = PanelState.Expanded
-                            if (!isLeftEdge) {
-                                currentX = screenWidth - panelWidthPx
-                                onUpdatePosition(currentX, currentY)
-                            }
+                            onPanelStateChange(PanelState.Expanded)
                         },
                     contentAlignment = if (isLeftEdge) Alignment.CenterStart else Alignment.CenterEnd
                 ) {
@@ -172,7 +191,7 @@ fun FloatingPanel(
                                 },
                                 onDragEnd = {
                                     // Snap to nearest horizontal edge
-                                    panelState = PanelState.Snapping
+                                    onPanelStateChange(PanelState.Snapping)
                                     val leftTarget = 0
                                     val rightTarget = screenWidth - panelWidthPx
                                     val middle = screenWidth / 2
@@ -196,10 +215,7 @@ fun FloatingPanel(
                                             onUpdatePosition(currentX, currentY)
                                         }
                                         // Collapse to edge handle after animation
-                                        panelState = PanelState.Collapsed
-                                        // Position handle at correct edge
-                                        currentX = if (isLeftEdge) 0 else screenWidth - touchTargetWidthPx
-                                        onUpdatePosition(currentX, currentY)
+                                        onPanelStateChange(PanelState.Collapsed)
                                     }
                                 }
                             )
@@ -234,9 +250,7 @@ fun FloatingPanel(
                                     .clip(CircleShape)
                                     .background(Color.White.copy(alpha = 0.1f))
                                     .clickable {
-                                        panelState = PanelState.Collapsed
-                                        currentX = if (isLeftEdge) 0 else screenWidth - touchTargetWidthPx
-                                        onUpdatePosition(currentX, currentY)
+                                        onPanelStateChange(PanelState.Collapsed)
                                     },
                                 contentAlignment = Alignment.Center
                             ) {

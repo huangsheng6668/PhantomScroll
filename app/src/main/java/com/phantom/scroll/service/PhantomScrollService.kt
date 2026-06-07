@@ -21,9 +21,15 @@ import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.phantom.scroll.config.ScrollConfig
 import com.phantom.scroll.gesture.GestureEngine
+import com.phantom.scroll.gesture.GestureResult
 import com.phantom.scroll.notification.NotificationHelper
 import com.phantom.scroll.ui.overlay.FloatingPanel
+import com.phantom.scroll.ui.overlay.PanelState
 import com.phantom.scroll.ui.theme.OverlayTheme
+import android.view.MotionEvent
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
@@ -36,6 +42,7 @@ class PhantomScrollService : AccessibilityService() {
     // Core business state
     val config by lazy { ScrollConfig(this, serviceScope) }
     private val gestureEngine = GestureEngine()
+    val panelStateFlow = MutableStateFlow(PanelState.Expanded)
 
     // Service-level Coroutine Scope (Main.immediate for UI orchestration)
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -125,6 +132,13 @@ class PhantomScrollService : AccessibilityService() {
                 )
                 val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
                 nm.notify(NotificationHelper.NOTIFICATION_ID, notification)
+            }
+        }
+
+        // Observe panelState changes → update WindowManager flags dynamically
+        serviceScope.launch {
+            panelStateFlow.collectLatest { state ->
+                updateLayoutParamsForState(state)
             }
         }
 
@@ -249,7 +263,9 @@ class PhantomScrollService : AccessibilityService() {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.LEFT
@@ -265,11 +281,28 @@ class PhantomScrollService : AccessibilityService() {
                 setViewTreeSavedStateRegistryOwner(overlayLifecycleOwner)
 
                 setContent {
+                    val pState by panelStateFlow.collectAsState()
                     OverlayTheme {
                         FloatingPanel(
                             config = config,
+                            panelState = pState,
+                            onPanelStateChange = { newState ->
+                                panelStateFlow.value = newState
+                            },
                             onUpdatePosition = { x, y -> updateFloatingPosition(x, y) }
                         )
+                    }
+                }
+
+                setOnTouchListener { _, event ->
+                    if (event.action == MotionEvent.ACTION_OUTSIDE) {
+                        Log.d(TAG, "Outside touch detected. Collapsing panel.")
+                        if (panelStateFlow.value == PanelState.Expanded) {
+                            panelStateFlow.value = PanelState.Collapsed
+                        }
+                        true
+                    } else {
+                        false
                     }
                 }
             }
@@ -298,6 +331,27 @@ class PhantomScrollService : AccessibilityService() {
         }
     }
 
+    private fun updateLayoutParamsForState(state: PanelState) {
+        val view = floatingView ?: return
+        val params = floatingParams ?: return
+        val targetFlags = if (state == PanelState.Expanded) {
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+        } else {
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        }
+        if (params.flags != targetFlags) {
+            params.flags = targetFlags
+            try {
+                windowManager.updateViewLayout(view, params)
+                Log.d(TAG, "Updated layout params flags to $targetFlags for state $state")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to update layout params flags: ${e.message}")
+            }
+        }
+    }
+
     // ========================= Scroll Loop =========================
 
     private fun startScrollingLoop() {
@@ -315,7 +369,7 @@ class PhantomScrollService : AccessibilityService() {
                 val snap = config.snapshot()
 
                 // Generate path on Dispatchers.Default (CPU-intensive)
-                val (path, finalDuration) = gestureEngine.generateGesturePath(
+                val gestureResult = gestureEngine.generateGesturePath(
                     screenWidth = screenWidth,
                     screenHeight = screenHeight,
                     distanceRatio = snap.distanceRatio,
@@ -327,7 +381,11 @@ class PhantomScrollService : AccessibilityService() {
                     if (!isActive || !config.isRunning.value) return@withContext false
 
                     suspendCancellableCoroutine { cont ->
-                        val stroke = GestureDescription.StrokeDescription(path, 0L, finalDuration)
+                        val stroke = GestureDescription.StrokeDescription(
+                            gestureResult.path,
+                            0L,
+                            gestureResult.duration
+                        )
                         val gesture = GestureDescription.Builder().addStroke(stroke).build()
 
                         val dispatched = dispatchGesture(gesture, object : GestureResultCallback() {
