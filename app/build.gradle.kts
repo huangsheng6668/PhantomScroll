@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,21 +9,28 @@ plugins {
 
 android {
     namespace = "com.phantom.scroll"
-    compileSdk = 34
+    compileSdk = 35
+
+    val keystorePropertiesFile = rootProject.file("keystore.properties")
+    val keystoreProperties = Properties()
+    if (keystorePropertiesFile.exists()) {
+        keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+    }
 
     signingConfigs {
         create("release") {
-            storeFile = file("phantomscroll.jks")
-            storePassword = "phantom123"
-            keyAlias = "phantomscroll"
-            keyPassword = "phantom123"
+            val storeFilePath = keystoreProperties.getProperty("key.store.file")
+            storeFile = if (storeFilePath != null) file(storeFilePath) else file("phantomscroll.jks")
+            storePassword = keystoreProperties.getProperty("key.store.password") ?: "phantom123"
+            keyAlias = keystoreProperties.getProperty("key.alias") ?: "phantomscroll"
+            keyPassword = keystoreProperties.getProperty("key.password") ?: "phantom123"
         }
     }
 
     defaultConfig {
         applicationId = "com.phantom.scroll"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
@@ -32,11 +42,15 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
+        }
+        debug {
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -49,6 +63,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     packaging {
         resources {
@@ -73,4 +88,11 @@ dependencies {
     implementation(libs.bundles.compose)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
+
+    // Local JVM Unit Tests
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.mockito.kotlin)
 }
+

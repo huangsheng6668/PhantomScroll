@@ -23,6 +23,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.phantom.scroll.service.PhantomScrollService
 import com.phantom.scroll.ui.theme.*
 
@@ -41,16 +44,27 @@ fun MainScreen() {
         isBatteryOptimizationIgnored = pm.isIgnoringBatteryOptimizations(context.packageName)
     }
 
-    // Call check on lifecycle entry
-    LaunchedEffect(Unit) {
-        checkPermissions()
+    // Auto-refresh permissions on application resume
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                checkPermissions()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkBackground)
-            .padding(24.dp),
+            .background(DarkBackground)       // 1. Fill background to cover system bars
+            .statusBarsPadding()               // 2. Padding for status bar
+            .navigationBarsPadding()           // 3. Padding for navigation bar
+            .padding(24.dp),                   // 4. Content margin
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
@@ -145,17 +159,11 @@ fun MainScreen() {
                     isGranted = isBatteryOptimizationIgnored,
                     onGrantClick = {
                         try {
-                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                data = Uri.parse("package:${context.packageName}")
-                            }
+                            // Complies with Google Play policy by using settings page instead of direct request dialog
+                            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                             context.startActivity(intent)
                         } catch (e: Exception) {
-                            try {
-                                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                context.startActivity(intent)
-                            } catch (ex: Exception) {
-                                android.widget.Toast.makeText(context, "无法直接跳转，请在系统设置中搜索“电池优化”", android.widget.Toast.LENGTH_LONG).show()
-                            }
+                            android.widget.Toast.makeText(context, "无法直接跳转，请在系统设置中手动开启“无限制”或忽略电池优化", android.widget.Toast.LENGTH_LONG).show()
                         }
                     }
                 )

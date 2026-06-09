@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phantom.scroll.config.ScrollConfig
 import com.phantom.scroll.ui.theme.*
+import com.phantom.scroll.util.PhantomLog
 import kotlinx.coroutines.launch
 
 enum class PanelState {
@@ -50,11 +51,6 @@ fun FloatingPanel(
     // Floating window raw coordinates in WindowManager space
     var currentX by remember { mutableIntStateOf(0) }
     var currentY by remember { mutableIntStateOf(200) }
-
-    val isRunning by config.isRunning.collectAsState()
-    val duration by config.scrollDuration.collectAsState()
-    val interval by config.scrollInterval.collectAsState()
-    val distanceRatio by config.scrollDistanceRatio.collectAsState()
 
     // Panel dimensions
     val panelWidth = 130.dp
@@ -112,7 +108,7 @@ fun FloatingPanel(
 
             lastScreenWidth = screenWidth
             lastScreenHeight = screenHeight
-            android.util.Log.d("FloatingPanel", "Orientation changed. Adjusted position to X=$targetX, Y=$targetY")
+            PhantomLog.d("FloatingPanel", "Orientation changed. Adjusted position to X=$targetX, Y=$targetY")
         }
     }
 
@@ -260,55 +256,14 @@ fun FloatingPanel(
 
                         Spacer(modifier = Modifier.height(4.dp))
 
-                        // ===== Duration Slider (200ms - 1500ms) =====
-                        SliderSection(
-                            label = "速度",
-                            valueText = "${duration}ms",
-                            value = duration.toFloat(),
-                            range = 200f..1500f,
-                            onValueChange = { config.scrollDuration.value = it.toLong() }
-                        )
-
-                        // ===== Interval Slider (500ms - 10000ms) =====
-                        SliderSection(
-                            label = "间隔",
-                            valueText = String.format("%.1fs", interval / 1000f),
-                            value = interval.toFloat(),
-                            range = 500f..10000f,
-                            onValueChange = { config.scrollInterval.value = it.toLong() }
-                        )
-
-                        // ===== Distance Slider (30% - 95%) =====
-                        SliderSection(
-                            label = "距离",
-                            valueText = "${(distanceRatio * 100).toInt()}%",
-                            value = distanceRatio,
-                            range = 0.30f..0.95f,
-                            onValueChange = { config.scrollDistanceRatio.value = it }
-                        )
+                        // ===== Local Recomposition Sections =====
+                        DurationSliderSection(config)
+                        IntervalSliderSection(config)
+                        DistanceSliderSection(config)
 
                         Spacer(modifier = Modifier.height(4.dp))
 
-                        // Play/Pause toggle button
-                        Button(
-                            onClick = { config.isRunning.value = !isRunning },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(26.dp)
-                                .shadow(2.dp, RoundedCornerShape(13.dp)),
-                            shape = RoundedCornerShape(13.dp),
-                            contentPadding = PaddingValues(0.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isRunning) ErrorRed else SuccessGreen
-                            )
-                        ) {
-                            Text(
-                                text = if (isRunning) "⏸ 暂停" else "▶ 开始",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 10.sp
-                            )
-                        }
+                        PlayToggleButton(config)
                     }
                 }
             }
@@ -331,6 +286,66 @@ fun FloatingPanel(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DurationSliderSection(config: ScrollConfig) {
+    val duration by config.scrollDuration.collectAsState()
+    SliderSection(
+        label = "速度",
+        valueText = "${duration}ms",
+        value = duration.toFloat(),
+        range = 200f..1500f,
+        onValueChange = { config.scrollDuration.value = it.toLong() }
+    )
+}
+
+@Composable
+private fun IntervalSliderSection(config: ScrollConfig) {
+    val interval by config.scrollInterval.collectAsState()
+    SliderSection(
+        label = "间隔",
+        valueText = String.format("%.1fs", interval / 1000f),
+        value = interval.toFloat(),
+        range = 500f..10000f,
+        onValueChange = { config.scrollInterval.value = it.toLong() }
+    )
+}
+
+@Composable
+private fun DistanceSliderSection(config: ScrollConfig) {
+    val distanceRatio by config.scrollDistanceRatio.collectAsState()
+    SliderSection(
+        label = "距离",
+        valueText = "${(distanceRatio * 100).toInt()}%",
+        value = distanceRatio,
+        range = 0.30f..0.95f,
+        onValueChange = { config.scrollDistanceRatio.value = it }
+    )
+}
+
+@Composable
+private fun PlayToggleButton(config: ScrollConfig) {
+    val isRunning by config.isRunning.collectAsState()
+    Button(
+        onClick = { config.isRunning.value = !isRunning },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(26.dp)
+            .shadow(2.dp, RoundedCornerShape(13.dp)),
+        shape = RoundedCornerShape(13.dp),
+        contentPadding = PaddingValues(0.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (isRunning) ErrorRed else SuccessGreen
+        )
+    ) {
+        Text(
+            text = if (isRunning) "⏸ 暂停" else "▶ 开始",
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = 10.sp
+        )
     }
 }
 

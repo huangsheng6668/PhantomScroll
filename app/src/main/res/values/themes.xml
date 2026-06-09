@@ -5,7 +5,6 @@
         <!-- Customize your theme here. -->
         <item name="colorPrimary">#1A1A1A</item>
         <item name="colorAccent">#00E5FF</item>
-        <item name="android:statusBarColor">#1A1A1A</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>

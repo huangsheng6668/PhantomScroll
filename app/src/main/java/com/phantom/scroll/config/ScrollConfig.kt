@@ -1,10 +1,18 @@
+@file:OptIn(kotlinx.coroutines.FlowPreview::class)
+
 package com.phantom.scroll.config
 
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
+/**
+ * Shared state manager for scrolling configurations.
+ * Features debounced background SharedPreferences persistence to eliminate disk I/O bottlenecks.
+ */
 class ScrollConfig(context: Context, scope: CoroutineScope) {
     private val prefs = context.getSharedPreferences("phantom_scroll_prefs", Context.MODE_PRIVATE)
 
@@ -25,24 +33,37 @@ class ScrollConfig(context: Context, scope: CoroutineScope) {
     val screenHeight = MutableStateFlow(context.resources.displayMetrics.heightPixels)
 
     init {
+        // Drop the first emission (initial value from prefs) to avoid writing immediately on startup.
+        // Debounce by 500ms so rapid updates from Compose Slider dragging are throttled.
         scope.launch {
-            scrollDuration.collect { duration ->
-                prefs.edit().putLong("scroll_duration", duration).apply()
-            }
+            scrollDuration
+                .drop(1)
+                .debounce(500)
+                .collect { duration ->
+                    prefs.edit().putLong("scroll_duration", duration).apply()
+                }
         }
         scope.launch {
-            scrollInterval.collect { interval ->
-                prefs.edit().putLong("scroll_interval", interval).apply()
-            }
+            scrollInterval
+                .drop(1)
+                .debounce(500)
+                .collect { interval ->
+                    prefs.edit().putLong("scroll_interval", interval).apply()
+                }
         }
         scope.launch {
-            scrollDistanceRatio.collect { ratio ->
-                prefs.edit().putFloat("scroll_distance_ratio", ratio).apply()
-            }
+            scrollDistanceRatio
+                .drop(1)
+                .debounce(500)
+                .collect { ratio ->
+                    prefs.edit().putFloat("scroll_distance_ratio", ratio).apply()
+                }
         }
     }
 
-    // Takes a thread-safe snapshot of the current configurations
+    /**
+     * Takes a thread-safe snapshot of the current configurations.
+     */
     fun snapshot(): ConfigSnapshot {
         return ConfigSnapshot(
             duration = scrollDuration.value,
@@ -52,9 +73,11 @@ class ScrollConfig(context: Context, scope: CoroutineScope) {
     }
 }
 
+/**
+ * Immutable configuration snapshot for a single swipe loop execution.
+ */
 data class ConfigSnapshot(
     val duration: Long,
     val interval: Long,
     val distanceRatio: Float
 )
-

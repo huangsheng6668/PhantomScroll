@@ -22,14 +22,6 @@ private val DarkColorScheme = darkColorScheme(
 
 @Composable
 fun PhantomScrollTheme(content: @Composable () -> Unit) {
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as? Activity)?.window
-            window?.statusBarColor = DarkColorScheme.background.toArgb()
-        }
-    }
-
     MaterialTheme(
         colorScheme = DarkColorScheme,
         typography = Typography,
