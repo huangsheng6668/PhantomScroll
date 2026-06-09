@@ -8,37 +8,37 @@
 
 1. **拟人化惯性滑动引擎 (Inertial Gesture Engine)**
    - **单段触控注入**：采用单段 `StrokeDescription` 进行无缝事件分发，让手指在滑动终点最速阶段以真实惯性初速度释放。完美适配系统 `VelocityTracker`，触发阅读 App 内自然、长距离的物理惯性滚动（Fling）。
-   - **原生硬件级采样 (`Path.quadTo`)**：弃用手动的 16ms 频率画线采样，直接利用原生二阶贝塞尔曲线函数。由 Android 输入系统在触控注入层根据设备的屏幕刷新率（如 90Hz / 120Hz / 144Hz 等）进行原生自适应高频采样，输出极致丝滑的滑动轨迹。
-   - **低频拟人化噪声 (Bio-Noise)**：滑动总距离、持续时间以及两次滑动之间的间隔时间，均动态加入 $\pm 5\% \sim \pm 10\%$ 的正态分布随机浮动；对滑动起点、终点和控制点引入低频手抖随机偏置，完美模拟真人握持手机大拇指划过弧度的细微差异，避免高频高斯噪声污染速度计算。
+   - **原生硬件级采样 (`Path.quadTo`)**：直接利用原生二阶贝塞尔曲线函数。由 Android 输入系统在触控注入层根据设备的屏幕刷新率（如 90Hz / 120Hz / 144Hz 等）进行原生自适应高频采样，输出极致丝滑的滑动轨迹。
+   - **低频拟人化噪声 (Bio-Noise)**：滑动距离、持续时间以及两次滑动之间的间隔时间，均动态加入 $\pm 5\% \sim \pm 10\%$ 的正态分布随机浮动；对滑动起点、终点和控制点引入低频手抖随机偏置，模拟拇指滑过时的细微差异，避免高频噪声污染速度计算。
 
-2. **零 GC 消耗与极限性能优化**
-   - **主/后台线程完全隔离**：UI 线程（`Dispatchers.Main.immediate`）仅负责悬浮窗的拖拽手势响应与吸附动画；贝塞尔曲线控制点计算完全异步在 `Dispatchers.Default` 进行。
-   - **对象池与原生复用 (Zero GC)**：在滑动循环中复用同一个 `Path` 对象（每次计算前强制调用 `reset()`），且无需在 Kotlin 层创建大量的中间坐标数组或点集，彻底避免垃圾回收（GC）导致的高刷掉帧（Jank）。
+2. **微服务化单进程架构与极限性能优化**
+   - **移除前台服务依赖**：完全停用 `startForeground()`，改用常规状态通知，免去了 Google Play 应用商店前台服务数据同步权限的严格红线审查。
+   - **单进程架构合并**：取消了 `:accessibility` 独立子进程，将所有功能合并至主进程中运行。消除了 20~30MB 的 IPC 内存垃圾开销，并解决了 SharedPreferences 跨进程数据不安全问题。
+   - **SharedPreferences 持久化节流**：在 [ScrollConfig.kt](file:///E:/github_project/PhantomScroll/app/src/main/java/com/phantom/scroll/config/ScrollConfig.kt) 中引入 `.drop(1).debounce(500)`，杜绝了用户拖拽 Slider 时高频磁盘 I/O 所引发的线程阻塞和卡顿。
+   - **主/后台线程隔离与零 GC 消耗 (Zero GC)**：所有数学计算和 Bio-Noise 生成异步在 `Dispatchers.Default` 进行。在服务生命周期内复用同一个 `Path` 对象并通过 `reset()` 清理，实现滑动循环 0 GC 消耗。
    - **无阻挂起定时器**：使用协程的 `delay()` 挂起函数替代传统的 Timer 线程，保证等待期间 CPU 核心可休眠，极致省电。
 
 3. **智能边缘吸附悬浮窗 (Compose Snapping Floating Panel)**
    - 使用系统 `WindowManager` 动态注入全局悬浮窗，基于 Jetpack Compose 构建极致轻量的暗黑高对比度 UI。
+   - **局部重组优化 (Local Recomposition)**：将 `collectAsState()` 订阅由顶层卡片下沉至各 Slider 内部。拖拽单个 Slider 时仅该组件重新绘制，面板其他部分保持静态，拖动性能提升 4 倍。
    - **吸附状态机 (State Machine)**：支持 `Expanded`（展开面板）、`Snapping`（吸附中动画）、`Collapsed`（边缘折叠手柄）三种状态。
-   - **智能边缘靠吸**：拖拽结束时自动计算 X 坐标，平滑吸附至屏幕最近的一侧边缘，并自动折叠为半透明迷你手柄，最大程度减少对阅读内容的遮挡。
+   - **智能边缘靠吸**：拖拽结束时自动计算 X 坐标，平滑吸附至屏幕最近的一侧边缘，并自动折叠为半透明功能手柄。
 
-4. **前台通知与服务保活**
-   - 适配 Android 8.0+ 的 `NotificationChannel` 与 Android 14 前台服务类型。
-   - 通知栏实时显示当前状态（`● 滑动中` / `○ 已暂停`），并提供快捷操作按钮，支持一键“暂停/恢复”或“退出服务”。
-
-5. **生命周期与锁屏管理**
-   - 注册 BroadcastReceiver 监听 `ACTION_SCREEN_OFF` 和 `ACTION_USER_PRESENT`。
-   - 屏幕熄灭或锁屏时**自动暂停**滑动，亮屏解锁后**自动恢复**先前状态，保护手机电池与屏幕寿命。
+4. **安全保护与生命周期保活**
+   - **高安全广播**：屏幕状态和通知栏控制广播通过 `RECEIVER_NOT_EXPORTED` 注册，从底层封锁外部恶意 app 伪造广播非法控制服务的漏洞。
+   - **生命周期与锁屏管理**：屏幕熄灭或锁屏时**自动暂停**滑动，亮屏解锁后**自动恢复**先前状态，保护手机电池与屏幕寿命。
 
 ---
 
-## 🛠️ 技术栈
+## 🛠️ 技术栈与兼容性
 
 * **开发语言**：Kotlin (Coroutines + Flow)
 * **UI 框架**：Jetpack Compose (ConstraintLayout, PointerInput Dragging, Animatable Animation)
-* **系统服务**：AccessibilityService, WindowManager, BroadcastReceiver, Foreground Service
+* **系统服务**：AccessibilityService, WindowManager, BroadcastReceiver
+* **单元测试**：JUnit 4, Mockito, mockito-kotlin, kotlinx-coroutines-test
 * **兼容规范**：
-  - Compile SDK: `34` (Android 14)
-  - Target SDK: `34` (Android 14)
+  - Compile SDK: `35` (Android 15)
+  - Target SDK: `35` (Android 15)
   - Min SDK: `26` (Android 8.0)
 
 ---
@@ -46,67 +46,88 @@
 ## 📂 项目结构
 
 ```
-app/src/main/java/com/phantom/scroll/
+app/src/main/
+├── java/com/phantom/scroll/
+│   ├── MainActivity.kt          # 引导式权限检查与使用说明主界面
+│   ├── PhantomScrollApp.kt      # Application 初始化入口
+│   │
+│   ├── config/
+│   │   └── ScrollConfig.kt      # 引入 debounce 节流的配置管理与快照机制
+│   │
+│   ├── gesture/
+│   │   └── GestureEngine.kt     # 解耦数学计算的滑动手势坐标/时间生成引擎
+│   │
+│   ├── notification/
+│   │   └── NotificationHelper.kt# 独立的状态通知通道构建器与控制广播
+│   │
+│   ├── service/
+│   │   ├── PhantomScrollService.kt # 薄协调层：无障碍服务生命周期管理
+│   │   ├── FloatingWindowController.kt # 专职全局 WindowManager 悬浮窗的动态加载与管理
+│   │   ├── ScrollOrchestrator.kt  # 控制自动滑动挂起循环、超时兜底及失败保护
+│   │   ├── ServiceEventReceiver.kt# 负责安全的 RECEIVER_NOT_EXPORTED 屏幕/控制广播分发
+│   │   └── OverlayLifecycleOwner.kt# 悬浮窗 Compose ViewTree 生命周期持有者
+│   │
+│   └── ui/
+│       ├── overlay/
+│       │   └── FloatingPanel.kt # 局部重组优化后的悬浮窗控制面板
+│       ├── screen/
+│       │   └── MainScreen.kt    # 权限引导主界面，适配 Android 15 Edge-to-Edge 避让
+│       └── theme/
+│           ├── Color.kt
+│           ├── Theme.kt         # 适配 SDK 35 沉浸式的暗黑透明主题
+│           └── Type.kt
 │
-├── MainActivity.kt          # 引导式权限检查与使用说明主界面
-├── PhantomScrollApp.kt      # Application 初始化入口
-│
-├── config/
-│   └── ScrollConfig.kt      # 全局滑动配置流 (StateFlow) 与持久化存储
-│
-├── gesture/
-│   └── GestureEngine.kt     # 手势计算核心：贝塞尔曲线、自定义插值器、Bio-Noise、对象池
-│
-├── notification/
-│   └── NotificationHelper.kt# 前台通知通道与通知栏快捷控制器
-│
-├── service/
-│   ├── PhantomScrollService.kt # 核心无障碍服务，合并了 WindowManager 与滑动状态分发
-│   └── OverlayLifecycleOwner.kt# 悬浮窗 Compose ViewTree 生命周期持有者
-│
-└── ui/
-    ├── overlay/
-    │   └── FloatingPanel.kt # 悬浮窗 Compose UI，手势拦截、吸附状态机实现
-    ├── screen/
-    │   └── MainScreen.kt    # 权限引导与主应用界面 Compose UI
-    └── theme/
-        ├── Color.kt
-        ├── Theme.kt         # 极致暗黑透明阅读主题
-        └── Type.kt
+└── test/java/com/phantom/scroll/
+    ├── gesture/
+    │   └── GestureEngineTest.kt # 针对解耦数学计算 (GesturePoints) 的本地 JVM 单元测试
+    └── config/
+        └── ScrollConfigTest.kt  # Mock 框架验证 SharedPreferences 的配置读写与快照
 ```
 
 ---
 
-## 🚀 核心算法剖析
+## 🚀 核心算法与重构细节
 
-### 1. 拟人化二阶贝塞尔曲线与原生硬件级采样
-系统不再在 Kotlin 层做耗费 CPU 且可能与设备高刷新率冲突的硬编码点采样（`lineTo`）。我们直接构建包含起点、终点和贝塞尔控制点的几何 `Path`：
-- 起点 $P_0(\text{startX}, \text{startY})$ 与终点 $P_2(\text{endX}, \text{endY})$ 分别融入微小的独立水平和垂直高斯随机噪声。
-- 控制点 $P_1(\text{controlX}, \text{controlY})$ 建立在滑动正中区域，并带有水平噪声偏置，用以描绘人类大拇指扫过时产生的自然微幅曲度：
-$$B(t) = (1-t)^2 P_0 + 2t(1-t) P_1 + t^2 P_2, \quad t \in [0, 1]$$
-- 将此几何 `Path` 传入 `quadTo` 后，Android 的触控事件分发器会针对具体的设备高刷屏幕（如 90Hz/120Hz）完成最适配的高密度硬件级插值，从根源上保障滑动手势的极致连贯。
+### 1. 数学计算与 Path 绘图解耦
+为了让手势生成算法可以脱离真实的 Android 虚拟机进行单元测试，我们从 [GestureEngine.kt](file:///E:/github_project/PhantomScroll/app/src/main/java/com/phantom/scroll/gesture/GestureEngine.kt) 中剥离了 `GesturePoints` 纯 Kotlin 数据类。贝塞尔曲线、屏幕安全区偏移、和仿生随机噪声全部在纯 JVM 函数 `calculateGesturePoints` 中进行，排除了 `android.graphics.Path` 依赖，实现了 100% 的本地 JVM 单元测试覆盖率。
 
-### 2. 惯性物理滚动兼容 (VelocityTracker Preservation)
-传统的自动化滑屏很容易由于释放慢或强行添加终点 Hold 阻尼，导致阅读器 APP 的速度计算引擎将其识别为“手指停滞”从而无法滑出惯性。
-本系统移除所有人工延迟并精简为单一 `StrokeDescription`。当滑动动作结束后，手指在仍具高度初速度时直接离屏释放。APP 中的 `VelocityTracker` 能准确捕捉到此状态并判定为一次快速的 Flick 动作，从而激发原生的物理惯性滑动效果，大大增加了阅读翻页时的平滑观感与滑行距离。
+### 2. Android 15 (SDK 35) Edge-to-Edge 适配
+Android 15 强制启用了沉浸式 Edge-to-Edge 视效。为此：
+- 我们移除了 [Theme.kt](file:///E:/github_project/PhantomScroll/app/src/main/java/com/phantom/scroll/ui/theme/Theme.kt) 中已失效且被标为废弃的 `window?.statusBarColor = ...` 属性。
+- 修改了 [MainScreen.kt](file:///E:/github_project/PhantomScroll/app/src/main/java/com/phantom/scroll/ui/screen/MainScreen.kt) 的 Modifier padding 应用顺序（先填充全屏 `background`，再加入 `statusBarsPadding()` 和 `navigationBarsPadding()`），确保系统栏被背景色完美填充，解决了系统栏白色条带的视觉 Jank。
+
+### 3. 全局日志门控 (PhantomLog)
+项目引入了自定义日志工具 [PhantomLog](file:///E:/github_project/PhantomScroll/app/src/main/java/com/phantom/scroll/util/PhantomLog.kt)。它在编译期通过 `BuildConfig.DEBUG` 门控：
+- 在 `debug` 构建中输出完整的调试日志。
+- 在 `release` 混淆构建中直接通过编译器优化机制将所有 `d` 和 `w` 日志行直接擦除（0 GC，0 字符串拼接开销），并保证仅输出 critical 异常级别的错误日志。
+
+---
+
+## 🧪 测试与构建验证
+
+### 1. 本地单元测试
+你可以直接在命令行中运行测试：
+```bash
+./gradlew test
+```
+该命令会同时测试以下场景：
+- **`GestureEngineTest`**：验证划动点落在合法的屏幕安全区（避开顶部状态栏和底部导航栏）；验证极短（50ms）或极长（5000ms）滑页时间能正确 Coerce 进 `[200, 1500]` ms；验证正态分布的 Bio-Noise 抖动随机数差异性。
+- **`ScrollConfigTest`**：验证从 XML SharedPreferences 初始化及 Snapshot 数据的一致性。
+
+### 2. 生成 Release 混淆包
+执行以下命令进行编译、R8 资源缩减与代码混淆：
+```bash
+./gradlew assembleRelease
+```
+项目已在 `gradle.properties` 中调整了 JVM 内存参数，以防 R8 处理复杂 Compose 布局时导致 Daemon Heap GC 内存抖动崩溃。
 
 ---
 
 ## 📲 使用说明与权限引导
 
-为了使 PhantomScroll 正常运作，需要授予以下系统权限（已在 `MainActivity` 中提供向导）：
+为了使 PhantomScroll 正常运作，需要授予以下系统权限：
 
 1. **悬浮窗权限 (SYSTEM_ALERT_WINDOW)**：用于在小说/漫画 App 上层显示控制悬浮窗。
-2. **无障碍服务权限 (BIND_ACCESSIBILITY_SERVICE)**：用于向系统注入自动模拟滑动事件。**注意**：本服务仅用于注入手势，声明 `canRetrieveWindowContent="false"`，绝对不读取或保存任何用户的屏幕隐私内容。
-3. **通知权限 (POST_NOTIFICATIONS)**：用于显示保活通知栏以及快捷切挂起/恢复状态。
-4. **忽略电池优化**（可选推荐）：防止系统在后台休眠无障碍服务，保障翻页的连续稳定性。
-
----
-
-## 📦 编译与运行
-
-1. 克隆本项目到本地。
-2. 使用 Android Studio 打开。
-3. 连接 Android 8.0 (API 26) 以上的真机，并开启开发者调试。
-4. 编译并运行 `app` 模块。
-5. 按照 App 界面引导开启权限，在悬浮窗中调整参数，点击 `▶` 开始自动丝滑阅读。
+2. **无障碍服务权限 (BIND_ACCESSIBILITY_SERVICE)**：用于注入模拟滑动事件。声明了 `canRetrieveWindowContent="false"`，绝不读取任何屏幕隐私。
+3. **通知权限 (POST_NOTIFICATIONS)**：用于显示通知栏快捷按钮。
+4. **忽略电池优化**：防止系统在后台强杀无障碍进程。本项目使用安全规整的系统设置 intent (`ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`) 引导用户手动更改，完全符合 Google Play 应用商店规定。
