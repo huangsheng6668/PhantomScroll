@@ -13,30 +13,33 @@
 | 服务架构 | 合并为单一 `PhantomScrollService extends AccessibilityService` |
 | 项目名称 | PhantomScroll |
 | 锁屏行为 | 屏幕熄灭/锁屏后自动**暂停**滑动，亮屏后恢复 |
-| 滑动方向 | 仅支持**纵向滑动**（暂不支持横向） |
-| compileSdk / targetSdk | API 34 (Android 14) |
+| 滑动方向 | 支持**纵向滑动**（包含向上 UP 与向下 DOWN 滚动切换） |
+| compileSdk / targetSdk | API 35 (Android 15) |
 | minSdk | API 26 (Android 8.0) |
 
 # Technical Stack & Refined Requirements
 
-## 1. 悬浮窗设计与边缘吸附状态机 (WindowManager & Compose Dragging)
+## 1. 悬浮窗设计与边缘吸附状态机 (WindowManager & Native Overlay)
 
 - **悬浮窗构建**：使用系统 `WindowManager` 动态添加全局悬浮窗，`LayoutParams` 必须正确配置 `TYPE_APPLICATION_OVERLAY`、`FLAG_NOT_FOCUSABLE` 以及 `LayoutParams.gravity = Gravity.TOP or Gravity.LEFT`。
-- **拖拽与状态机**：使用 Jetpack Compose 的 `Modifier.pointerInput` 与 `detectDragGestures` 监听用户拖拽。悬浮窗内部维护一个状态机（State）：`Expanded`（展开面板）、`Snapping`（吸附中动画）、`Collapsed`（边缘折叠手柄）。
+- **UI 框架分工**：主界面权限引导页采用 Jetpack Compose 构建；悬浮窗控制面板全面重写为**原生 View (XML 布局 + Material Components)**，彻底移除阅读期间常驻的 Compose 运行时以节省内存。
+- **拖拽与状态机**：利用自定义 View 的 `onTouchEvent` 与 `onInterceptTouchEvent` 拦截与监听用户拖拽。悬浮窗内部维护一个状态机（State）：`Expanded`（展开面板）、`Snapping`（吸附中动画）、`Collapsed`（边缘折叠手柄）。
 - **边缘吸附与折叠动画**：
-  - 当拖拽结束时（`onDragEnd`），计算当前 $X$ 坐标。若超过屏幕宽度的一半，利用 Compose `Animatable` 动画将悬浮窗平滑推至右边缘，反之推至左边缘。
-  - 吸附完成后，自动切换为 `Collapsed` 状态：控制面板隐藏，仅在边缘渲染一个高透明度、极窄的半圆或条状"手柄（Handle）"。
-  - 点击或向内滑动该手柄，平滑反转动画，重新展开控制面板。
-- **UI 规范**：极致极简、高对比度暗黑模式，背景组件使用半透明（如 `Color.Black.copy(alpha = 0.6f)`），确保视觉重心完全留给背景的漫画或小说内容。
+  - 当拖拽结束时，计算当前 $X$ 坐标。若超过屏幕宽度的一半，利用 `ValueAnimator` 动画将悬浮窗平滑推至右边缘，反之推至左边缘（250ms 吸附）。
+  - 吸附完成后，自动切换为 `Collapsed` 状态：控制面板隐藏，仅在边缘渲染一个高透明度、宽 32dp 的"手柄（Handle）"。
+  - 点击或向内滑动该手柄，平滑展开控制面板。
+- **触控拦截守护**：在 parent custom view 中监听 `ACTION_DOWN`，判断如果触摸点落在交互式子视图（如 Slider、Chip 容器 `preset_row`、开关等）的 global bounds 范围内，则将 `disallowIntercept` 设为 true，防止微小位移导致 ViewGroup 拦截事件并取消子视图的点击行为。
 
-## 2. 状态管理与 Slider 实时通信
+## 2. 状态管理与单一真相源 (SettingsRepository & DataStore)
 
-- **数据流设计**：在 Service 内部维护以下 `MutableStateFlow`：
-  1. `scrollDurationFlow`: 单次滑动持续时间（Slider 范围：200ms - 1500ms，默认 500ms）。
-  2. `scrollIntervalFlow`: 两次滑动间隔时间（Slider 范围：500ms - 10000ms，默认 2000ms）。
-  3. `scrollDistanceFlow`: 单次滑动距离（Slider 范围：屏幕高度 30% - 95%，默认 75%）。
-  4. `isRunningFlow`: 当前是否正在执行自动滑动（Boolean）。
-- **实时同步**：Compose UI 中的 `Slider` 直接通过状态绑定修改上述数据流，后台执行滑动的协程需通过结构化并发实时读取最新值。
+- **全局唯一真相源**：在 Service 内部引入 `data/` 层，通过 `SettingsRepository` 持有所有核心 `MutableStateFlow` 并进行集中状态分发。
+- **领域模型**：
+  - `ScrollSettings`：保存当前的 duration (速度)、interval (间隔)、distanceRatio (距离)、direction (方向)。
+  - `ScrollStats`：保存累计翻页次数与运行时长。
+  - `AppProfile`：存储前台特定 App 的定制化设置配置。
+- **双向同步与节流落盘**：
+  - 原生 View 中的 `Slider` 与 Chip 通过观察 Repository 的 `StateFlow` 进行命令式刷新（零重组开销）。
+  - 用户拖动 Slider 改写内存状态立即生效，后台通过协程 Flow `debounce(500ms)` 对 Preferences DataStore 写入节流，杜绝磁盘 I/O 阻塞。
 
 ## 3. 极限性能优化与零 GC 消耗设计 (Coroutines & Object Pooling)
 
@@ -46,48 +49,33 @@
   - **计算线程 (Dispatchers.Default)**：所有贝塞尔曲线轨迹点、随机噪声、时间加权算法必须在 `Dispatchers.Default` 中异步计算。
 - **对象复用 (Object Pooling)**：
   - 绝对禁止在滑动循环中重复 `new Path()`。在 Service 作用域内复用同一个 `android.graphics.Path` 对象，每次计算新轨迹前强制调用 `path.reset()`。
-  - 预分配 `FloatArray` 存储采样点坐标，避免每次循环 `new float[]`。
+  - 采样点计算解耦为纯 JVM Kotlin 数据类返回，便于在本地 JVM 线程运行高覆盖率单测。
 - **无阻塞定时器**：使用协程的 `delay()` 挂起函数替代传统的定时器，确保等待期间 CPU 核心可进入休眠状态，极致省电。
-- **采样点策略**：采样密度公式 `samplingPoints = max(10, scrollDuration / 16)`，匹配 60fps 刷新率。
 
 ## 4. 工业级拟人化滑动算法 (Bezier Curve & Custom Interpolator)
 
 - **手势注入**：使用 `AccessibilityService.dispatchGesture()`，通过 `GestureDescription.StrokeDescription` 注入事件。
-- **动态曲线生成**：算法需动态获取屏幕的宽度和高度，在屏幕中央安全区域（避开顶部状态栏和底部导航栏）生成纵向滑动路径。
+- **动态曲线生成**：算法需动态获取屏幕的宽度和高度，在屏幕中央安全区域（避开顶部状态栏和底部导航栏，默认 0.15 ~ 0.85）生成纵向滑动路径。
 - **贝塞尔曲线**：利用二阶贝塞尔曲线公式 $B(t) = (1-t)^2P_0 + 2t(1-t)P_1 + t^2P_2$，在起始点 $P_0$ 和终点 $P_2$ 之间引入一个带有微小随机水平偏移的控制点 $P_1$，使滑动轨迹产生符合人类手指习惯的微小弧度。
-- **非对称速度曲线**：使用自定义插值器 `cubicBezier(0.25, 0.1, 0.25, 1.0)` 替代对称的 `AccelerateDecelerateInterpolator`，实现加速阶段短而急促、减速阶段长而平缓的真实手指运动特征。
+- **非对称速度曲线**：实现加速阶段短而急促、减速阶段长而平缓的真实手指运动特征。
 - **生物拟人化噪声（Bio-Noise）**：
   - 单次滑动的总距离、持续时间以及间隔时间，必须在用户设定值的基础上动态加入 $\pm 5\% \sim \pm 10\%$ 的正态分布随机浮动。
   - 轨迹采样点之间引入微小的像素级随机抖动（Noise）。
-- **错误处理**：在 `GestureResultCallback.onCancelled()` 中记录日志，连续失败 3 次后暂停滑动并通知用户。
 
-## 5. 统一服务架构 (Single AccessibilityService)
+## 5. 产品化特性支持
 
-- 将悬浮窗和自动滑动功能合并到单一 `PhantomScrollService extends AccessibilityService`。
-- 在 `onServiceConnected()` 中通过 `WindowManager` 添加 Compose 悬浮窗。
-- 在 `onDestroy()` 中移除悬浮窗并取消所有协程。
-- 使用 `CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)` 作为 Service 级作用域。
-- 所有状态流（duration / interval / distance / isRunning）直接在同一个 Service 实例内共享，零通信开销。
+- **场景预设 (Presets)**：内置预设参数：
+  - `小说`：速度 400ms / 间隔 2.3s / 距离 45% / 方向 UP
+  - `漫画`：速度 400ms / 间隔 1.5s / 距离 55% / 方向 UP
+  - `自定义`：显示当前用户调准的 custom 变量；手动拖动任意 Slider 自动切回`自定义`，且支持点击「自定义」Chip 快速恢复先前的自定义数值。
+- **运行统计**：利用协程自动统计并更新已翻页次数与累计分钟，支持点击重置。
+- **按 App 记忆配置 (Per-App)**：前台包名变化检测（支持系统 denylist 过滤与 300ms 快速切换防抖），当开启该功能并调整 Slider 时，自动创建并持久化当前 App 的专属配置 profile；切换回普通应用时自动还原全局默认，长按标签即可忘记该 App 配置。
 
-## 6. 前台通知与服务保活
+## 6. 系统工程化收尾
 
-- 创建 `NotificationChannel`（Android 8.0+ 必需）。
-- 在服务启动时调用 `startForeground()` 绑定低优先级常驻通知。
-- 通知显示当前状态：`● 滑动中` / `○ 已暂停`。
-- 通知 Action 按钮：快速暂停/恢复。
-
-## 7. 主界面与权限引导 (MainActivity)
-
-- 使用 Jetpack Compose 构建引导式权限检查页面。
-- 权限检查流程：悬浮窗权限 (`Settings.canDrawOverlays()`) → 无障碍服务权限。
-- 权限全部就绪后显示使用说明卡片。
-- 提供"启动服务"入口。
-
-## 8. 生命周期与锁屏管理
-
-- 注册 `BroadcastReceiver` 监听 `ACTION_SCREEN_OFF` / `ACTION_SCREEN_ON`。
-- 屏幕熄灭时自动暂停自动滑动协程（保存当前运行状态）。
-- 屏幕亮起后自动恢复之前的运行状态。
+- **Baseline Profile**：引入独立的 `:baselineprofile` 模块（使用 `androidx.baselineprofile` 插件），自动在编译 release 时生成 Main 权限页的启动配置文件，将 profile 打入发布包以加速冷启动与首帧渲染。
+- **Compose 编译器优化**：通过开启 Compose Compiler 稳定性报告指导重构，将 `MainScreen` 的状态聚合为 `@Immutable PermissionStatus` 减小重组范围。
+- **低优先级通知保活**：合并为单进程，通过低优先级状态栏通知对无障碍服务进行保活，并且通知包含快捷 Action 按钮支持一键暂停/恢复。
 
 # What I Need From You
 
@@ -98,9 +86,9 @@
 | 1 | 系统配置 | `AndroidManifest.xml` | 权限声明、Service 注册 |
 | 2 | 系统配置 | `res/xml/accessibility_service_config.xml` | 无障碍服务配置 |
 | 3 | 主入口 | `MainActivity` + `MainScreen` | 权限检查引导、使用说明 |
-| 4 | 核心服务 | `PhantomScrollService` | 合并后的无障碍 + 悬浮窗 + 滑动控制服务 |
-| 5 | 手势引擎 | `GestureEngine` | 贝塞尔曲线、Bio-Noise、对象池、采样策略 |
-| 6 | 悬浮窗 UI | `FloatingPanel` | Compose UI、拖拽、吸附状态机、折叠手柄 |
-| 7 | 状态管理 | `ScrollConfig` | 所有配置状态流的数据持有类 |
-| 8 | 通知管理 | `NotificationHelper` | 通知渠道、前台通知构建 |
-| 9 | 主题 | `Theme.kt` | 暗黑模式设计系统 |
+| 4 | 核心服务 | `PhantomScrollService` | 合并后的无障碍服务及生命周期管理 |
+| 5 | 数据模型 | `data/ScrollSettings.kt` / `SettingsRepository.kt` | 单一真相源及状态仓储服务 |
+| 6 | 手势引擎 | `GestureEngine` | 贝塞尔曲线、Bio-Noise、对象池、采样策略 |
+| 7 | 悬浮窗 UI | `FloatingOverlayView` | 原生自定义视图、拖拽吸附状态机、交互保护拦截 |
+| 8 | 通知管理 | `NotificationHelper` | 通知渠道、前台状态通知构建 |
+| 9 | 样式系统 | `res/values/colors.xml` | 暗黑高对比度色值及 Drawable 样式包 |
