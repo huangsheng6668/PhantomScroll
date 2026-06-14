@@ -105,3 +105,10 @@ dependencies {
     testImplementation(libs.mockito.kotlin)
 }
 
+composeCompiler {
+    // Phase 4: emit Compose stability reports to build/reports to find unstable params.
+    // Reports are build artifacts (not committed); inspect to guide MainScreen refactors.
+    reportsDestination.set(layout.buildDirectory.dir("compose_compiler/reports"))
+    // (Optional) stability config file can force-mark packages stable; not needed here.
+}
+

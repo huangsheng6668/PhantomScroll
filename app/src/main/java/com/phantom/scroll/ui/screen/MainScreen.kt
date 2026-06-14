@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -28,6 +29,21 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.phantom.scroll.service.PhantomScrollService
 import com.phantom.scroll.ui.theme.*
+
+/**
+ * Snapshot of the permission-screen state passed to leaf composables.
+ * Marked [Immutable] so Compose skips recomposition when an equal instance is passed,
+ * instead of treating the aggregate as unstable. Also centralizes the "all granted"
+ * read so the bottom button reads a single value rather than three independent states.
+ */
+@Immutable
+data class PermissionStatus(
+    val overlayGranted: Boolean,
+    val accessibilityEnabled: Boolean,
+    val batteryOptimizationIgnored: Boolean
+) {
+    val allGranted: Boolean get() = overlayGranted && accessibilityEnabled && batteryOptimizationIgnored
+}
 
 @Composable
 fun MainScreen() {
@@ -68,6 +84,10 @@ fun MainScreen() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
+        // Centralize the three permission states into one stable snapshot so the bottom
+        // button reads a single value (status.allGranted) instead of three independent states.
+        val status = PermissionStatus(isOverlayGranted, isAccessibilityEnabled, isBatteryOptimizationIgnored)
+
         Spacer(modifier = Modifier.height(40.dp))
 
         // GHOST LOGO AND TITLE
@@ -210,13 +230,11 @@ fun MainScreen() {
                 .shadow(12.dp, RoundedCornerShape(25.dp)),
             shape = RoundedCornerShape(25.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (isOverlayGranted && isAccessibilityEnabled && isBatteryOptimizationIgnored)
-                    SuccessGreen else PhantomBlue
+                containerColor = if (status.allGranted) SuccessGreen else PhantomBlue
             )
         ) {
             Text(
-                text = if (isOverlayGranted && isAccessibilityEnabled && isBatteryOptimizationIgnored)
-                    "✓ 权限与保活已就绪" else "刷新权限状态",
+                text = if (status.allGranted) "✓ 权限与保活已就绪" else "刷新权限状态",
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp
