@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- gradient border: cyan -> purple, 16dp rounded -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:startColor="@color/phantom_cyan"
+                android:endColor="@color/phantom_purple"
+                android:angle="45" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+    <!-- inner dark-translucent card, inset 1dp to reveal the gradient border -->
+    <item
+        android:left="1dp"
+        android:top="1dp"
+        android:right="1dp"
+        android:bottom="1dp">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/dark_surface_translucent" />
+            <corners android:radius="15dp" />
+        </shape>
+    </item>
+</layer-list>
