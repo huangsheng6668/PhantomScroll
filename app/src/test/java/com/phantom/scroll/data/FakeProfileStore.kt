@@ -18,6 +18,10 @@ class FakeProfileStore : ProfileStore {
     override suspend fun loadStats(): ScrollStats = stats
 
     override suspend fun saveGlobal(settings: ScrollSettings) { global = settings }
+    override suspend fun saveAllProfiles(profiles: Map<String, AppProfile>) {
+        this.profiles.clear()
+        this.profiles.putAll(profiles)
+    }
     override suspend fun saveProfile(profile: AppProfile) { profiles[profile.packageName] = profile }
     override suspend fun deleteProfile(packageName: String) { profiles.remove(packageName) }
     override suspend fun savePerAppEnabled(enabled: Boolean) { perAppEnabled = enabled }

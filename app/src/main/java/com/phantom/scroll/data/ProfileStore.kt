@@ -12,6 +12,7 @@ interface ProfileStore {
     suspend fun loadStats(): ScrollStats
 
     suspend fun saveGlobal(settings: ScrollSettings)
+    suspend fun saveAllProfiles(profiles: Map<String, AppProfile>)
     suspend fun saveProfile(profile: AppProfile)
     suspend fun deleteProfile(packageName: String)
     suspend fun savePerAppEnabled(enabled: Boolean)
