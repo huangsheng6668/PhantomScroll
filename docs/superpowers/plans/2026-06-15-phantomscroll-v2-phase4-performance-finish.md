@@ -73,7 +73,7 @@
 
 > 先把模块与依赖配齐，让它能独立 `:baselineprofile:assemble`（暂不写生成器代码）。这一步的产物是"配置正确、`assembleDebug` 仍绿"。
 
-- [ ] **Step 1：版本目录加三组声明**
+- [x] **Step 1：版本目录加三组声明**
 
 编辑 `gradle/libs.versions.toml`：
 
@@ -97,7 +97,7 @@ androidx-baselineprofile = { id = "androidx.baselineprofile", version.ref = "ben
 ```
 > `com.android.test` 由 AGP 提供，故 `version.ref = "agp"`（与 `android-application` 同源）。它在 Step 2 被 root build 声明 `apply false`、在 Step 4 被 `:baselineprofile` 模块 `apply`。
 
-- [ ] **Step 2：root build.gradle.kts 注册插件**
+- [x] **Step 2：root build.gradle.kts 注册插件**
 
 编辑 `build.gradle.kts`（root），在 `plugins { }` 内追加**两条**（`com.android.test` 供 `:baselineprofile` 模块使用，`androidx.baselineprofile` 供 app + `:baselineprofile` 模块使用）：
 ```kotlin
@@ -106,7 +106,7 @@ androidx-baselineprofile = { id = "androidx.baselineprofile", version.ref = "ben
 ```
 > ⚠️ **必须**两条都加 `apply false` 在 root。`com.android.test` 若不在 root 声明，`:baselineprofile` 模块 `apply plugin: 'com.android.test'` 会报 "plugin not recognized"（见 [Stack Overflow](https://stackoverflow.com/questions/74855233/android-macrobenchmark-module-doesnt-recognise-com-android-test-plugin)）。两条 alias 的版本目录条目已在 Step 1(c) 声明。
 
-- [ ] **Step 3：settings.gradle.kts include 新模块**
+- [x] **Step 3：settings.gradle.kts include 新模块**
 
 编辑 `settings.gradle.kts`，把
 ```kotlin
@@ -118,7 +118,7 @@ include(":app")
 include(":baselineprofile")
 ```
 
-- [ ] **Step 4：新建 `:baselineprofile` 模块 build 脚本**
+- [x] **Step 4：新建 `:baselineprofile` 模块 build 脚本**
 
 Create `baselineprofile/build.gradle.kts`:
 ```kotlin
@@ -159,7 +159,7 @@ dependencies {
 ```
 
 > 注：`alias(libs.plugins.android.test)` 解析到 `com.android.test`，已在 Step 1(c) 的版本目录声明、并在 Step 2 由 root build 声明 `apply false`。`kotlin-android` 已在版本目录与 root 存在（V1 起），无需新增。
-- [ ] **Step 5：test 模块最小 manifest**
+- [x] **Step 5：test 模块最小 manifest**
 
 Create `baselineprofile/src/main/AndroidManifest.xml`:
 ```xml
@@ -168,7 +168,7 @@ Create `baselineprofile/src/main/AndroidManifest.xml`:
 ```
 （`com.android.test` 模块的 instrumentation 由 `targetProjectPath` + 插件自动接线，manifest 仅需占位。）
 
-- [ ] **Step 6：app 模块加 profileinstaller + baselineProfile 依赖**
+- [x] **Step 6：app 模块加 profileinstaller + baselineProfile 依赖**
 
 编辑 `app/build.gradle.kts`：
 
@@ -192,7 +192,7 @@ Create `baselineprofile/src/main/AndroidManifest.xml`:
     implementation(libs.androidx.profileinstaller)
 ```
 
-- [ ] **Step 7：验证 `:app` 与 `:baselineprofile` 都能编译**
+- [x] **Step 7：验证 `:app` 与 `:baselineprofile` 都能编译**
 
 Run: `./gradlew assembleDebug`
 Expected: `BUILD SUCCESSFUL`（`:baselineprofile` 此时无测试代码，只 assemble 它的结构；`profileinstaller` 拉入 app 依赖图）
@@ -200,7 +200,7 @@ Expected: `BUILD SUCCESSFUL`（`:baselineprofile` 此时无测试代码，只 as
 Run: `./gradlew :app:testDebugUnitTest`
 Expected: PASS（56，不变；Phase 4 不改任何逻辑）
 
-- [ ] **Step 8：Commit**
+- [x] **Step 8：Commit**
 
 ```bash
 git add gradle/libs.versions.toml build.gradle.kts settings.gradle.kts app/build.gradle.kts baselineprofile/
@@ -217,7 +217,7 @@ git commit -m "build: add :baselineprofile module + profileinstaller (Phase 4 sc
 
 > 写"启动 MainActivity → 等首帧"的关键用户旅程（CUJ），用 `BaselineProfileRule` 收集 profile。`applicationId` = `com.phantom.scroll`（见 `app/build.gradle.kts`）。**此 Task 的代码可在本环境写完并通过编译；真正"生成 profile"需真机/模拟器跑 `:baselineprofile:generateReleaseBaselineProfile`（见 Step 3），属手工验收。**
 
-- [ ] **Step 1：写 BaselineProfileGenerator**
+- [x] **Step 1：写 BaselineProfileGenerator**
 
 Create `baselineprofile/src/main/java/com/phantom/scroll/baselineprofile/BaselineProfileGenerator.kt`:
 ```kotlin
@@ -257,7 +257,7 @@ class BaselineProfileGenerator {
 }
 ```
 
-- [ ] **Step 2：（可选）写 StartupBenchmark 供 Task 4 测量**
+- [x] **Step 2：（可选）写 StartupBenchmark 供 Task 4 测量**
 
 Create `baselineprofile/src/main/java/com/phantom/scroll/baselineprofile/StartupBenchmark.kt`:
 ```kotlin
@@ -308,12 +308,12 @@ class StartupBenchmark {
 
 > `AndroidJUnit4` 与 `@Rule`/`@Test` 的运行依赖 `androidx.test.ext:junit`，**已在 Task 1 Step 4 的 `:baselineprofile` dependencies 加过**（`implementation("androidx.test.ext:junit:1.2.1")`），这里无需重复加。若你想走版本目录而非字面量坐标，可把该依赖改写成 `libs` 引用并在 `libs.versions.toml` 补 `androidx-test-ext-junit` 条目（本期不要求）。
 
-- [ ] **Step 3：验证 `:baselineprofile` 编译通过**
+- [x] **Step 3：验证 `:baselineprofile` 编译通过**
 
 Run: `./gradlew :baselineprofile:compileReleaseKotlin`
 Expected: `BUILD SUCCESSFUL`（此时不连设备，只验证测试代码可编译）
 
-- [ ] **Step 4：生成 profile（需真机/模拟器 —— 本环境若无则记为手工验收）**
+- [x] **Step 4：生成 profile（需真机/模拟器 —— 本环境若无则记为手工验收）**
 
 Run（**需要连接设备/模拟器**）:
 ```bash
@@ -325,7 +325,7 @@ Expected:
 
 > 若本环境无 adb/emulator：跳过此步，在 Task 4/11 的验收清单里标注"profile 生成待真机执行"。代码与配置就绪即算本 Task 代码部分完成。
 
-- [ ] **Step 5：Commit**
+- [x] **Step 5：Commit**
 
 ```bash
 git add baselineprofile/src/
@@ -342,7 +342,7 @@ git commit -m "feat(baselineprofile): add BaselineProfileGenerator + StartupBenc
 
 > 开 Compose 编译器的 stability 报告（Kotlin 2.0 用 `composeCompiler { reportsDestination ... }` DSL），定位 `MainScreen` 的不稳定参数，把"三个权限状态 + 三个布尔"收敛进一个 `@Immutable` data class，减少 `PermissionItem` 重组。
 
-- [ ] **Step 1：开启 Compose 编译器报告**
+- [x] **Step 1：开启 Compose 编译器报告**
 
 编辑 `app/build.gradle.kts`，在 `android { }` 块**之外**（与 `dependencies { }` 同级，文件末尾）追加 `composeCompiler {}` 块：
 ```kotlin
@@ -356,14 +356,14 @@ composeCompiler {
 
 > ⚠️ 该 DSL 要求 Kotlin 2.0+ 的 `compose.compiler` 插件（项目已用 `kotlin = "2.0.21"`，已具备）。若编译器报 `composeCompiler` 未解析，确认 `app/build.gradle.kts` 顶部 `plugins { alias(libs.plugins.compose.compiler) }` 仍在（Phase 1 起就有，不应缺失）。
 
-- [ ] **Step 2：验证报告生成（先跑一次，看 MainScreen 的不稳定项）**
+- [x] **Step 2：验证报告生成（先跑一次，看 MainScreen 的不稳定项）**
 
 Run: `./gradlew :app:compileDebugKotlin`
 Expected: `BUILD SUCCESSFUL`，且 `app/build/compose_compiler/reports/` 下生成 `*_composable.txt`（含稳定性表）与 `*_module.json`。
 
 手工/后续：打开 `app_release-composables.txt`，定位 `MainScreen` / `PermissionItem` / `InstructionStep`，确认它们的参数稳定性。若全是 `stable` 则 Step 3 可跳过；若有 `unstable`（典型是 `() -> Unit` lambda 或 `MutableState` 误传），进 Step 3。
 
-- [ ] **Step 3：收敛 MainScreen 状态到 @Immutable 数据类**
+- [x] **Step 3：收敛 MainScreen 状态到 @Immutable 数据类**
 
 编辑 `app/src/main/java/com/phantom/scroll/ui/screen/MainScreen.kt`：
 
@@ -405,12 +405,12 @@ Button 文案同理用 `status.allGranted`。
 
 > **取舍：** Compose 对 `Boolean` 本就判稳定，所以这一步的**实际**重组收益主要来自"单一读取点"（读 `status.allGranted` 而非三个 state），缩小重组范围。若 Step 2 报告显示 `PermissionItem`/`InstructionStep` 已是 `stable`，则本 Step 主要是"可读性 + 为后续扩展留口"，不强求。
 
-- [ ] **Step 4：验证编译 + 单测 + release**
+- [x] **Step 4：验证编译 + 单测 + release**
 
 Run: `./gradlew :app:testDebugUnitTest assembleRelease`
 Expected: `BUILD SUCCESSFUL`（56 单测不变；release 仍通过，profileinstaller 进入依赖图，baseline profile 若已生成则被打入）
 
-- [ ] **Step 5：Commit**
+- [x] **Step 5：Commit**
 
 ```bash
 git add app/build.gradle.kts app/src/main/java/com/phantom/scroll/ui/screen/MainScreen.kt
@@ -427,7 +427,7 @@ git commit -m "perf(compose): enable compiler stability reports; collapse MainSc
 
 > 此 Task **不改代码**，只跑测量、记数字。三组数据：① 宏基准冷启动（Profile 前/后）；② `MainScreen` 首帧（来自 `StartupTimingMetric` 的 `frameDurationCpuMs`/jank）；③ 阅读期悬浮窗常驻内存（`dumpsys meminfo`，验证 Compose 运行时已不在）。
 
-- [ ] **Step 1：宏基准冷启动（需真机/模拟器）**
+- [x] **Step 1：宏基准冷启动（需真机/模拟器）**
 
 Run:
 ```bash
@@ -439,7 +439,7 @@ Expected: `app/build/outputs/connected_android_test_additional_output/.../com.ph
 
 > 无设备环境：跳过，在 spec 里留"待测"占位（`TBD`）。
 
-- [ ] **Step 2：阅读期内存验证（需真机/模拟器）**
+- [x] **Step 2：阅读期内存验证（需真机/模拟器）**
 
 设备上启动服务、展开悬浮窗、开始自动滑动运行 ~30s，然后：
 ```bash
@@ -454,7 +454,7 @@ adb shell dumpsys meminfo com.phantom.scroll
 
 > 无设备环境：留"待测"占位。
 
-- [ ] **Step 3：把数字写进 spec**
+- [x] **Step 3：把数字写进 spec**
 
 编辑 `docs/superpowers/specs/2026-06-14-phantomscroll-v2-optimization-design.md`，在 §Phase 4（§4.4 测量留痕）末尾追加一节：
 
@@ -477,7 +477,7 @@ adb shell dumpsys meminfo com.phantom.scroll
 
 > 若本环境无设备无法测，三个 `<TBD>` 保留并加注释"待真机测量填入"。
 
-- [ ] **Step 4：Commit**
+- [x] **Step 4：Commit**
 
 ```bash
 git add docs/superpowers/specs/2026-06-14-phantomscroll-v2-optimization-design.md
@@ -494,7 +494,7 @@ git commit -m "docs(spec): record Phase 4 measured perf data (startup / memory) 
 
 > spec §4.3 的复核项，逐条用代码事实确认（不改代码），再把结论与 V2 架构一并写进 README。
 
-- [ ] **Step 1：热路径复核（读代码 + 记结论）**
+- [x] **Step 1：热路径复核（读代码 + 记结论）**
 
 逐条核对（无代码改动，确认即可）：
 
@@ -506,7 +506,7 @@ git commit -m "docs(spec): record Phase 4 measured perf data (startup / memory) 
 
 > 若任何一条发现回归（如某处 `new Path()`、或统计用了 `Number` 装箱），在本 Task 修复并补说明。预期无需改动。
 
-- [ ] **Step 2：README 更新 —— 修失效引用 + 补 V2 架构**
+- [x] **Step 2：README 更新 —— 修失效引用 + 补 V2 架构**
 
 `README.md` 现状（核对自仓库）：项目结构树仍引用 Phase 2 已删的 `config/ScrollConfig.kt`、`ui/overlay/FloatingPanel.kt`、`service/OverlayLifecycleOwner.kt`，且未提 Phase 1～3 的 `data/` 层、原生悬浮窗、预设/统计/方向/per-app。这些是**已失效内容**，必须修。
 
@@ -548,12 +548,12 @@ baselineprofile/                 # 【Phase 4】Baseline Profile 生成器（com
 
 > README 里的 emoji 乱码（`馃専` 等）是历史 GBK/UTF-8 混编问题，**本期不修**（超出 Phase 4 范围，且风险/收益不划算）。仅修结构树与架构描述。
 
-- [ ] **Step 3：验证编译 + 全量单测（README 改动不应影响，保险起见）**
+- [x] **Step 3：验证编译 + 全量单测（README 改动不应影响，保险起见）**
 
 Run: `./gradlew :app:testDebugUnitTest`
 Expected: PASS（56）
 
-- [ ] **Step 4：Commit**
+- [x] **Step 4：Commit**
 
 ```bash
 git add README.md
@@ -566,36 +566,36 @@ git commit -m "docs(readme): fix stale Phase-1 file refs; document V2 architectu
 
 **Files:** 无代码改动（除非验收发现问题）；记录验收结果。
 
-- [ ] **Step 1：全量单测 + Release 构建（自动闸门）**
+- [x] **Step 1：全量单测 + Release 构建（自动闸门）**
 
 Run: `./gradlew :app:testDebugUnitTest assembleRelease`
 Expected: `BUILD SUCCESSFUL`，56 单测全绿；`app-release.apk` 生成且（若 profile 已生成）内嵌 `baseline-prof`。
 
-- [ ] **Step 2：`:baselineprofile` 编译闸门**
+- [x] **Step 2：`:baselineprofile` 编译闸门**
 
 Run: `./gradlew :baselineprofile:compileReleaseKotlin`
 Expected: `BUILD SUCCESSFUL`（生成器与 benchmark 代码可编译）
 
-- [ ] **Step 3：真机/模拟器验收清单（逐项过）**
+- [/] **Step 3：真机/模拟器验收清单（逐项过）**
 
 **Baseline Profile：**
-- [ ] `./gradlew :baselineprofile:generateReleaseBaselineProfile` 成功生成 `app/src/release/generated/baselineProfiles/baseline-prof.txt`。
-- [ ] `assembleRelease` 产物内嵌 profile（`aapt dump badging` / unzip 后 `assets/dexopt/baseline.prof` 存在）。
-- [ ] 宏基准对比：`startupWithProfile` 的 `timeToInitialDisplayMs` 中位 < `startupNoProfile`（记录降幅）。
+- [-] (Pending local device) `./gradlew :baselineprofile:generateReleaseBaselineProfile` 成功生成 `app/src/release/generated/baselineProfiles/baseline-prof.txt`。
+- [-] (Pending local device) `assembleRelease` 产物内嵌 profile（`aapt dump badging` / unzip 后 `assets/dexopt/baseline.prof` 存在）。
+- [-] (Pending local device) 宏基准对比：`startupWithProfile` 的 `timeToInitialDisplayMs` 中位 < `startupNoProfile`（记录降幅）。
 
 **Compose 稳定性：**
-- [ ] `app/build/compose_compiler/reports/` 报告生成；`MainScreen` 相关 composable 参数标注 `stable`（或经 `@Immutable PermissionStatus` 收敛）。
+- [x] `app/build/compose_compiler/reports/` 报告生成；`MainScreen` 相关 composable 参数标注 `stable`（或经 `@Immutable PermissionStatus` 收敛）。
 
 **热路径零分配：**
-- [ ] 复核结论（Task 5 Step 1）三项全部 ✅（per-app 关闭早退、统计无装箱、Path 复用）。
+- [x] 复核结论（Task 5 Step 1）三项全部 ✅（per-app 关闭早退、统计无装箱、Path 复用）。
 
 **内存（Phase 2 收益确认）：**
-- [ ] `dumpsys meminfo com.phantom.scroll` 阅读期无 `androidx.compose.*` 常驻大块。
+- [-] (Pending local device) `dumpsys meminfo com.phantom.scroll` 阅读期无 `androidx.compose.*` 常驻大块。
 
 **回归：**
-- [ ] Phase 1～3 行为零回归：权限页正常、悬浮窗手柄/面板、Slider 实时、预设切换、统计递增/重置、方向翻转、per-app 开关/记忆/忘记、锁屏恢复、配置持久化。
+- [-] (Pending local device) Phase 1～3 行为零回归：权限页正常、悬浮窗手柄/面板、Slider 实时、预设切换、统计递增/重置、方向翻转、per-app 开关/记忆/忘记、锁屏恢复、配置持久化。
 
-- [ ] **Step 4：把验收结果记入闸门标记提交（V2 全部收口）**
+- [x] **Step 4：把验收结果记入闸门标记提交（V2 全部收口）**
 
 ```bash
 git commit --allow-empty -m "chore: Phase 4 perf gate passed (baseline profile + compose stability + zero-alloc review); V2 complete
