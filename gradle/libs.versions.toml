@@ -9,6 +9,7 @@ coroutines = "1.9.0"
 datastore = "1.1.1"
 savedstate = "1.2.1"
 appcompat = "1.7.0"
+material = "1.12.0"
 junit = "4.13.2"
 mockito = "5.12.0"
 mockito-kotlin = "5.3.1"
@@ -42,11 +43,14 @@ kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 # DataStore (persistence)
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 
-# SavedState (required by OverlayLifecycleOwner)
+# SavedState (required by Compose internals)
 androidx-savedstate = { group = "androidx.savedstate", name = "savedstate", version.ref = "savedstate" }
 
 # AppCompat (required for Theme.AppCompat.NoActionBar in themes.xml)
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+
+# Material Components (native Slider for the overlay)
+google-material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
 # Testing dependencies
 junit = { group = "junit", name = "junit", version.ref = "junit" }

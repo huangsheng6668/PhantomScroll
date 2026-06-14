@@ -7,4 +7,13 @@
         <item name="colorAccent">#00E5FF</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+
+    <!-- Material3 theme used ONLY to inflate the native overlay (Slider requires a Material theme).
+         The app's main theme stays Theme.AppCompat.NoActionBar. -->
+    <style name="Theme.PhantomScroll.Overlay" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/phantom_blue</item>
+        <item name="colorOnPrimary">@color/text_primary</item>
+        <item name="colorPrimaryContainer">@color/dark_surface</item>
+    </style>
 </resources>
+

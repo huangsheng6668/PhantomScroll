@@ -79,6 +79,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)
+    // Material Components (native overlay Slider)
+    implementation(libs.google.material)
     implementation(libs.androidx.savedstate)
     implementation(libs.kotlinx.coroutines.android)
     // DataStore (async persistence, replaces SharedPreferences)
