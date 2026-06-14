@@ -226,12 +226,29 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private fun applyState(state: PanelState) {
+        val repo = repository ?: return
+        val screenWidth = repo.screenWidth.value
+        val panelWidthPx = (130f * resources.displayMetrics.density).toInt()
+        val handleWidthPx = (32f * resources.displayMetrics.density).toInt()
+
         when (state) {
             PanelState.Collapsed -> {
                 handleRoot.visibility = VISIBLE
                 panelRoot.visibility = GONE
+                if (!isLeftEdge) {
+                    currentX = screenWidth - handleWidthPx
+                    onUpdatePosition?.invoke(currentX, currentY)
+                }
             }
-            PanelState.Expanded, PanelState.Snapping -> {
+            PanelState.Expanded -> {
+                panelRoot.visibility = VISIBLE
+                handleRoot.visibility = GONE
+                if (!isLeftEdge) {
+                    currentX = screenWidth - panelWidthPx
+                    onUpdatePosition?.invoke(currentX, currentY)
+                }
+            }
+            PanelState.Snapping -> {
                 panelRoot.visibility = VISIBLE
                 handleRoot.visibility = GONE
             }
@@ -318,11 +335,16 @@ class FloatingOverlayView @JvmOverloads constructor(
 
     private fun repositionToBounds(screenWidth: Int, screenHeight: Int) {
         // Use actual measured view dimensions; fallback to 130dp / WRAP height estimates.
-        val panelW = panelRoot.width.takeIf { it > 0 }
-            ?: (130f * resources.displayMetrics.density).toInt()
+        val flow = panelStateFlow
+        val isCollapsed = flow != null && flow.value == PanelState.Collapsed
+        val widthPx = if (isCollapsed) {
+            (32f * resources.displayMetrics.density).toInt()
+        } else {
+            (130f * resources.displayMetrics.density).toInt()
+        }
         val panelH = panelRoot.height.takeIf { it > 0 }
             ?: (200f * resources.displayMetrics.density).toInt()
-        val nx = OverlayGeometry.clamp(currentX, 0, (screenWidth - panelW).coerceAtLeast(0))
+        val nx = OverlayGeometry.clamp(currentX, 0, (screenWidth - widthPx).coerceAtLeast(0))
         val ny = OverlayGeometry.clamp(currentY, 0, (screenHeight - panelH).coerceAtLeast(0))
         if (nx != currentX || ny != currentY) {
             currentX = nx
