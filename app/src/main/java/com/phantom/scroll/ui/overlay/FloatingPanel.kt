@@ -27,12 +27,6 @@ import com.phantom.scroll.ui.theme.*
 import com.phantom.scroll.util.PhantomLog
 import kotlinx.coroutines.launch
 
-enum class PanelState {
-    Expanded,
-    Snapping,
-    Collapsed
-}
-
 @Composable
 fun FloatingPanel(
     config: ScrollConfig,
