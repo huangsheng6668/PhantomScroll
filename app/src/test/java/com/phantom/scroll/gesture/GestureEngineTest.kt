@@ -3,6 +3,7 @@ package com.phantom.scroll.gesture
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.Random
+import com.phantom.scroll.data.ScrollDirection
 
 class GestureEngineTest {
 
@@ -101,5 +102,40 @@ class GestureEngineTest {
         // Verify duration has variation
         val durations = results.map { it.duration }.toSet()
         assertTrue("Points should have varying durations due to bio-noise", durations.size > 1)
+    }
+
+    @Test
+    fun direction_up_swipes_from_bottom_to_top() {
+        val screenWidth = 1080
+        val screenHeight = 2400
+        val random = Random(42)
+        val points = GestureEngine.calculateGesturePoints(
+            screenWidth = screenWidth,
+            screenHeight = screenHeight,
+            distanceRatio = 0.75f,
+            durationMs = 500L,
+            random = random,
+            direction = ScrollDirection.UP
+        )
+        assertTrue("UP: endY (${points.endY}) must be above startY (${points.startY})", points.endY < points.startY)
+    }
+
+    @Test
+    fun direction_down_swipes_from_top_to_bottom() {
+        val screenWidth = 1080
+        val screenHeight = 2400
+        val random = Random(42)
+        val points = GestureEngine.calculateGesturePoints(
+            screenWidth = screenWidth,
+            screenHeight = screenHeight,
+            distanceRatio = 0.75f,
+            durationMs = 500L,
+            random = random,
+            direction = ScrollDirection.DOWN
+        )
+        // DOWN mirrors UP: start near top, end below start
+        assertTrue("DOWN: startY (${points.startY}) must be near top (safeTop=${screenHeight * 0.15f})",
+            points.startY < screenHeight * 0.5f)
+        assertTrue("DOWN: endY (${points.endY}) must be below startY (${points.startY})", points.endY > points.startY)
     }
 }

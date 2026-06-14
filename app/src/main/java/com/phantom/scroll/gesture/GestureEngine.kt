@@ -1,6 +1,7 @@
 package com.phantom.scroll.gesture
 
 import android.graphics.Path
+import com.phantom.scroll.data.ScrollDirection
 import java.util.Random
 
 /**
@@ -45,18 +46,14 @@ class GestureEngine {
         screenWidth: Int,
         screenHeight: Int,
         distanceRatio: Float,
-        durationMs: Long
+        durationMs: Long,
+        direction: ScrollDirection = ScrollDirection.UP
     ): GestureResult {
-        val points = calculateGesturePoints(screenWidth, screenHeight, distanceRatio, durationMs, random)
-        
+        val points = calculateGesturePoints(screenWidth, screenHeight, distanceRatio, durationMs, random, direction)
         reusablePath.reset()
         reusablePath.moveTo(points.startX, points.startY)
         reusablePath.quadTo(points.controlX, points.controlY, points.endX, points.endY)
-
-        return GestureResult(
-            path = reusablePath,
-            duration = points.duration
-        )
+        return GestureResult(path = reusablePath, duration = points.duration)
     }
 
     companion object {
@@ -69,34 +66,43 @@ class GestureEngine {
             screenHeight: Int,
             distanceRatio: Float,
             durationMs: Long,
-            random: Random
+            random: Random,
+            direction: ScrollDirection = ScrollDirection.UP
         ): GesturePoints {
             // 1. Define screen safe zone (avoid status bar + navigation bar)
             val safeTop = screenHeight * 0.15f
             val safeBottom = screenHeight * 0.85f
             val safeHeight = safeBottom - safeTop
 
-            // Helper for local noise calculations using the provided random instance
             fun addNoise(base: Float, ratio: Float): Float {
                 val factor = (random.nextGaussian().toFloat() * ratio).coerceIn(-ratio * 2, ratio * 2)
                 return base * (1f + factor)
             }
 
-            // 2. Scroll distance with Bio-Noise (±8% Gaussian fluctuation)
+            // 2. Scroll distance with Bio-Noise (±8%)
             val baselineDistance = safeHeight * distanceRatio
             val noisyDistance = addNoise(baselineDistance, 0.08f)
                 .coerceIn(safeHeight * 0.2f, safeHeight * 0.95f)
 
-            // 3. Start/end Y: swipe from bottom upward (pulls content down)
-            val startY = safeBottom - addNoise(screenHeight * 0.03f, 0.1f)
-            val endY = (startY - noisyDistance).coerceAtLeast(safeTop)
+            // 3. Start/end Y: direction-dependent.
+            //    UP   (default): finger moves bottom→top, content scrolls up (next page).
+            //    DOWN          : finger moves top→bottom, content scrolls down (previous page).
+            val startY: Float
+            val endY: Float
+            if (direction == ScrollDirection.DOWN) {
+                startY = safeTop + addNoise(screenHeight * 0.03f, 0.1f)
+                endY = (startY + noisyDistance).coerceAtMost(safeBottom)
+            } else {
+                startY = safeBottom - addNoise(screenHeight * 0.03f, 0.1f)
+                endY = (startY - noisyDistance).coerceAtLeast(safeTop)
+            }
 
-            // 4. X center with micro thumb-landing deviation (low-frequency noise)
+            // 4. X center with micro thumb-landing deviation
             val centerX = screenWidth * 0.5f
             val startX = centerX + random.nextGaussian().toFloat() * (screenWidth * 0.02f)
             val endX = centerX + random.nextGaussian().toFloat() * (screenWidth * 0.02f)
 
-            // 5. Quadratic Bezier control point P1 (creates natural thumb arc)
+            // 5. Quadratic Bezier control point P1
             val controlX = centerX + random.nextGaussian().toFloat() * (screenWidth * 0.05f)
             val controlY = (startY + endY) * 0.5f
 
@@ -104,15 +110,7 @@ class GestureEngine {
             val actualDuration = addNoise(durationMs.toFloat(), 0.07f)
                 .toLong().coerceIn(200, 1500)
 
-            return GesturePoints(
-                startX = startX,
-                startY = startY,
-                controlX = controlX,
-                controlY = controlY,
-                endX = endX,
-                endY = endY,
-                duration = actualDuration
-            )
+            return GesturePoints(startX, startY, controlX, controlY, endX, endY, actualDuration)
         }
     }
 }
