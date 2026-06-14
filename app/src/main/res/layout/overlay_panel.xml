@@ -45,6 +45,55 @@
         android:layout_width="match_parent"
         android:layout_height="4dp" />
 
+    <!-- Preset row: 小说 | 漫画 | 自定义 (single-select highlight) -->
+    <LinearLayout
+        android:id="@+id/preset_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+        <TextView
+            android:id="@+id/chip_novel"
+            android:layout_width="0dp"
+            android:layout_height="22dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="小说"
+            android:textColor="@color/text_primary"
+            android:textSize="9sp"
+            android:background="@drawable/overlay_chip_bg"
+            android:clickable="true"
+            android:focusable="true" />
+        <Space android:layout_width="4dp" android:layout_height="match_parent" />
+        <TextView
+            android:id="@+id/chip_comic"
+            android:layout_width="0dp"
+            android:layout_height="22dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="漫画"
+            android:textColor="@color/text_primary"
+            android:textSize="9sp"
+            android:background="@drawable/overlay_chip_bg"
+            android:clickable="true"
+            android:focusable="true" />
+        <Space android:layout_width="4dp" android:layout_height="match_parent" />
+        <TextView
+            android:id="@+id/chip_custom"
+            android:layout_width="0dp"
+            android:layout_height="22dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="自定义"
+            android:textColor="@color/text_primary"
+            android:textSize="9sp"
+            android:background="@drawable/overlay_chip_bg"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <Space android:layout_width="match_parent" android:layout_height="4dp" />
+
     <!-- 速度 (duration) -->
     <LinearLayout
         android:layout_width="match_parent"
@@ -159,6 +208,86 @@
     <Space
         android:layout_width="match_parent"
         android:layout_height="4dp" />
+
+    <!-- Direction toggle: ↑ (UP, next page) / ↓ (DOWN, previous page) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="方向"
+            android:textColor="@color/text_secondary"
+            android:textSize="9sp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/direction_button"
+            android:layout_width="44dp"
+            android:layout_height="24dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:padding="0dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="↑"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            app:cornerRadius="12dp"
+            app:backgroundTint="@color/phantom_blue_50" />
+    </LinearLayout>
+
+    <Space android:layout_width="match_parent" android:layout_height="4dp" />
+
+    <!-- Stats row: 已翻 N 次 · 约 M 分钟 (click to reset) -->
+    <LinearLayout
+        android:id="@+id/stats_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="@drawable/overlay_chip_bg"
+        android:padding="3dp">
+        <TextView
+            android:id="@+id/stats_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="已翻 0 次 · 约 0 分钟"
+            android:textColor="@color/text_secondary"
+            android:textSize="8sp" />
+    </LinearLayout>
+
+    <Space android:layout_width="match_parent" android:layout_height="4dp" />
+
+    <!-- Per-app row: switch + current app label -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/perapp_switch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="按App"
+            android:textColor="@color/text_secondary"
+            android:textSize="9sp" />
+    </LinearLayout>
+    <TextView
+        android:id="@+id/perapp_label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text=""
+        android:textColor="@color/phantom_cyan"
+        android:textSize="8sp"
+        android:visibility="gone" />
 
     <!-- Play / Pause: MaterialButton handles custom backgroundTint and corner radius natively.
          insetTop/insetBottom=0dp removes MaterialButton's default 6dp vertical insets
