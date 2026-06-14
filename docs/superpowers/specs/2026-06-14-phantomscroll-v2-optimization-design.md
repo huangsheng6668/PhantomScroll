@@ -11,7 +11,7 @@
 
 在 V1（架构拆分 / SDK 35 / 零 GC / 日志门控 / 单测基础）已全部落地的基础上，对 PhantomScroll 进行第二轮优化，覆盖**性能优化、代码可维护性、产品化设计**三个维度。
 
-**项目现状（V1 完成后）**：Kotlin + Jetpack Compose + Coroutines，约 1360 行主代码 + 2 个单测文件，compileSdk/targetSdk 35，minSdk 26。悬浮窗用 ComposeView 承载；UI 直接读写 `ScrollConfig` 内部 `MutableStateFlow`；核心循环 `ScrollOrchestrator` 与事件接收器零测试覆盖；魔法数字散落。
+**项目现状（V1 完成后）**：Kotlin + Jetpack Compose + Coroutines，约 1837 行主代码 + 2 个单测文件，compileSdk/targetSdk 35，minSdk 26。悬浮窗用 ComposeView 承载；UI 直接读写 `ScrollConfig` 内部 `MutableStateFlow`；核心循环 `ScrollOrchestrator` 与事件接收器零测试覆盖；魔法数字散落。
 
 **目标状态（V2 完成后）**：
 
@@ -130,7 +130,12 @@ res/
 ### 1.1 领域模型（`data/` 包，全部新增）
 
 ```kotlin
-enum class ScrollDirection { UP, DOWN }   // 默认 UP = 今天行为
+enum class ScrollDirection {
+    /** 手指上滑，内容向上滚动（翻到下一页） */
+    UP,
+    /** 手指下滑，内容向下滚动（翻到上一页） */
+    DOWN
+}
 
 data class ScrollSettings(
     val duration: Long,        // 200..1500 ms
@@ -177,6 +182,9 @@ class SettingsRepository(
     fun incrementStats(swipeDelta: Long = 1, elapsedDeltaMs: Long)
     fun resetStats()
 }
+
+> [!NOTE]
+> `setCurrentPackage`、`incrementStats` 等非 suspend 方法仅在主内存中同步修改 `StateFlow`，其持久化写入会由 repository 在协程作用域内通过 flow 的 debounce(500ms) 机制节流并异步进行。这确保了此类方法从任何线程（或 Binder 线程）调用时都是线程安全且绝对无阻塞的。
 ```
 
 **`activeSettings` 解析中枢**（按 App 记忆的核心）：
@@ -196,16 +204,19 @@ activeSettings = combine(perAppEnabled, currentPackage, profiles, global) {
 
 ```kotlin
 interface ProfileStore {
-    fun loadGlobal(): ScrollSettings
-    fun loadProfiles(): Map<String, AppProfile>
-    fun loadPerAppEnabled(): Boolean
-    fun loadStats(): ScrollStats
+    suspend fun loadGlobal(): ScrollSettings
+    suspend fun loadProfiles(): Map<String, AppProfile>
+    suspend fun loadPerAppEnabled(): Boolean
+    suspend fun loadStats(): ScrollStats
     suspend fun saveGlobal(s: ScrollSettings)
     suspend fun saveProfile(p: AppProfile)
     suspend fun deleteProfile(pkg: String)
     suspend fun savePerAppEnabled(enabled: Boolean)
     suspend fun saveStats(stats: ScrollStats)
 }
+
+> [!NOTE]
+> 鉴于 DataStore 本质是异步 I/O 的，`ProfileStore` 的数据加载接口全部声明为 `suspend` 函数。`SettingsRepository` 将在其主协程作用域内通过结构化并发异步并发读取以完成初始化，从而彻底避免阻塞主线程。
 ```
 
 `DataStoreProfileStore` 使用 Preferences DataStore + `SharedPreferencesMigration`：
@@ -243,13 +254,18 @@ interface ProfileStore {
 | 修改 | `service/ScrollOrchestrator.kt`（读 repo，失败逻辑委托 `FailurePolicy`） |
 | 修改 | `service/ServiceEventReceiver.kt`（状态机委托 `ScreenStateCoordinator`） |
 | 修改 | `config/ScrollConfig.kt`（降级为桥接，`@Deprecated`） |
+| 修改/迁移测试 | `app/src/test/java/com/phantom/scroll/config/ScrollConfigTest.kt`（由于原有接口改变，更新该单测以仅验证适配器逻辑，其余测试迁移到 `SettingsRepositoryTest`） |
 | 修改 | `app/build.gradle.kts`、`gradle/libs.versions.toml`（加 DataStore 依赖） |
 
 ### 1.7 Phase 1 验收
 
 - 全部新增单测通过；`./gradlew test` 绿。
 - 手工验证：启动 / 拖 Slider 实时改参 / 播放暂停 / 锁屏暂停/亮屏恢复 / 杀进程重启后配置保留 —— **行为与今天完全一致**。
-- DataStore 迁移：旧用户首次升级后，duration/interval/distanceRatio 值不丢失。
+- **DataStore 迁移及覆盖验证**：
+  - **新安装**：验证首选项均读取正确默认值（duration=500ms, interval=2000ms, distanceRatio=0.75）。
+  - **版本升级**：在已存有 V1 数据的设备上安装 V2，验证 DataStore 中数据与旧 SharedPreferences 完美一致，不丢失用户参数。
+  - **二次启动**：验证升级迁移后第二次启动，不会再次重复迁移覆盖新写入的数据（迁移完成标记判定生效）。
+- 旧 `ScrollConfigTest` 已正确升级/重写，且不破坏现有测试套件。
 
 ---
 
@@ -260,6 +276,7 @@ interface ProfileStore {
 ### 2.1 视图结构
 
 - 新增自定义视图 `ui/overlay/FloatingOverlayView.kt`：一个 `FrameLayout`，内部按 `PanelState` 切换"手柄 / 完整面板"可见性。**只负责渲染 + 发事件**（Slider 变化、按钮点击、拖拽位移回调），不含业务逻辑。
+  - **Flow 收集生命周期管理**：在 `FloatingOverlayView` 中使用其专属的 `CoroutineScope`。在 `onAttachedToWindow()` 时启动收集 `SettingsRepository` 的 StateFlow 并命令式刷新 UI，在 `onDetachedFromWindow()` 时取消该 Scope，保证生命周期安全，防止内存泄漏和 NPE。
 - `PanelState` 枚举独立成文件 `ui/overlay/PanelState.kt`。
 - `FloatingWindowController` 保留 WindowManager 编排，把 `ComposeView` 换成 `LayoutInflater.inflate(R.layout.overlay_panel_expanded, ...)`；不再设 ViewTreeLifecycleOwner。
 
@@ -269,7 +286,7 @@ interface ProfileStore {
 |------|------|
 | `detectDragGestures` + `Animatable.animateTo(tween 250ms)` | `View.OnTouchListener`（ACTION_MOVE 算 delta）+ `ValueAnimator.ofInt(...)` 吸附 250ms |
 | `collectAsState` 驱动重组 | repository 的 `StateFlow` 在 service scope 上 `collect` → 命令式刷新 View |
-| Compose `Slider` | `com.google.android.material.slider.Slider` |
+| Compose `Slider` | `com.google.android.material.slider.Slider`（配置 `stepSize = 0f` 以支持连续滑动，且禁用 tooltip label/popup 气泡以匹配原先极简的交互视觉） |
 | `Brush.horizontalGradient`（手柄/边框） | `GradientDrawable` shape drawable |
 | `collectAsState` 的 `screenWidth/Height` | `service.resources.displayMetrics` + `onConfigurationChanged` 仍负责更新 |
 
@@ -287,6 +304,7 @@ interface ProfileStore {
 - `ui/overlay/FloatingPanel.kt`（Compose）
 - `service/OverlayLifecycleOwner.kt`
 - `config/ScrollConfig.kt`（Phase 1 桥接，面板删除后无消费者）
+- `app/src/test/java/com/phantom/scroll/config/ScrollConfigTest.kt`（删除原桥接与适配器单测，测试已全面转移至 `SettingsRepositoryTest`）
 
 ### 2.6 Phase 2 改动文件清单
 
@@ -298,7 +316,8 @@ interface ProfileStore {
 | 新建 | `res/values/colors.xml` |
 | 修改 | `service/FloatingWindowController.kt`（原生 View inflate + 拖拽/吸附） |
 | 修改 | `app/build.gradle.kts`、`gradle/libs.versions.toml`（加 Material Components 依赖） |
-| 删除 | `ui/overlay/FloatingPanel.kt`、`service/OverlayLifecycleOwner.kt`、`config/ScrollConfig.kt` |
+| 修改 | `app/proguard-rules.pro`（审查并更新原生 View 混淆规则，确保 Material Slider 等安全） |
+| 删除 | `ui/overlay/FloatingPanel.kt`、`service/OverlayLifecycleOwner.kt`、`config/ScrollConfig.kt`、`app/src/test/java/com/phantom/scroll/config/ScrollConfigTest.kt` |
 
 ### 2.7 Phase 2 对齐验收清单（进 Phase 3 前必须全过）
 
@@ -311,6 +330,8 @@ interface ProfileStore {
 - [ ] 旋屏后手柄/面板位置正确重定位。
 - [ ] 视觉与旧 Compose 面板一致或可接受接近（渐变/圆角/配色）。
 - [ ] `dumpsys meminfo` 确认阅读期间不再常驻 Compose 运行时（内存下降）。
+- [ ] Slider 拖动时数值平滑变化无明显滞后与跳变（连续值无步进）。
+- [ ] 面板展开与边缘折叠吸附的过渡动画时长（250ms）及减速效果与旧版体验一致。
 
 ---
 
@@ -334,6 +355,7 @@ interface ProfileStore {
 - `ScrollOrchestrator` 每次成功手势后：`repo.incrementStats(swipeDelta=1, elapsedDeltaMs=noiseInterval)`（间隔累加 ≈ 运行时长）。
 - 面板显示一行：`已翻 1,234 次 · 约 42 分钟`；点击该行 → 重置（带 Toast 确认）。
 - 累计持久化（DataStore），跨服务重启保留。
+- **时间格式化与换算规则**：时长展示统一折算为分钟，换算公式为 `Math.round(elapsedMs / 60000.0)`，通过四舍五入得出最终显示数值。
 
 ### 3.3 滚动方向 / 手势扩展
 
@@ -346,23 +368,28 @@ interface ProfileStore {
 
 ### 3.4 按 App 记忆配置
 
-**事件源**（`PhantomScrollService.onAccessibilityEvent`）：
+**事件源与过滤防抖**（`PhantomScrollService.onAccessibilityEvent`）：
 
 ```kotlin
 override fun onAccessibilityEvent(event: AccessibilityEvent?) {
     if (!repository.perAppEnabled.value) return          // 关闭时零开销
     val pkg = event?.packageName?.toString() ?: return
     if (pkg == currentPackage) return                    // 仅处理包名变化
-    if (pkg in SYSTEM_PACKAGE_DENYLIST) return           // 过滤 systemui/输入法/桌面
+    if (pkg in SYSTEM_PACKAGE_DENYLIST || pkg == "com.phantom.scroll") return // 过滤系统/自身包名
+    
+    // 增加 300ms 快速切换防抖机制，降低高频包名变更对性能和存储的开销
+    if (shouldDebounceEvent(pkg)) return
     repository.setCurrentPackage(pkg)
 }
 ```
 
-denylist：`com.android.systemui`、当前输入法、启动器包名等。
+denylist：`com.android.systemui`、当前输入法、各个系统的 Launcher（启动器）包名以及应用自身包名 `com.phantom.scroll`。
 
 **解析**：Phase 1 的 `activeSettings` 已完成 —— 当前 pkg 有 profile 用 profile，否则回落 global。
 
-**"记忆"语义**：per-app 开启时，用户在前台某 App 调 Slider → `repo.updateActive(settings)` 写入**该 App 的 profile**（而非 global）；切到无 profile 的 App 自动回落 global。新增"忘记当前 App 配置"动作（`repo.deleteProfile(currentPackage)`）。
+**"记忆"语义与动态创建配置**：
+- **首次调整自动创建**：per-app 开启时，当前处于未自定义过的 App 前台，配置仍使用 `global`（activeSettings 派生逻辑回落）。若用户在该前台 App 中**拖动任一 Slider 进行了数值修改或切换了方向**，系统将**自动且动态地为该包名创建对应的 AppProfile**（即通过调用 `repo.updateActive(settings)` 写入 `profiles[currentPackage]`，而不影响全局 `global`）。
+- **回落与重置**：切到无 profile 的 App 自动回落 global。新增"忘记当前 App 配置"动作（`repo.deleteProfile(currentPackage)`），删除后 activeSettings 再次自动回落至 global。
 
 **UI**：面板加"按 App 记忆"开关；开启且前台 App 已识别时显示小标签 `📖 当前：<App 名>`，此时 Slider 编辑该 App 的 profile。
 
