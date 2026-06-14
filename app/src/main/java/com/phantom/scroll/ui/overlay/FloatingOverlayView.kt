@@ -13,7 +13,11 @@ import android.widget.TextView
 import androidx.core.content.res.ResourcesCompat
 import com.google.android.material.slider.Slider
 import com.phantom.scroll.R
+import com.phantom.scroll.data.Preset
+import com.phantom.scroll.data.PresetSelection
+import com.phantom.scroll.data.ScrollDirection
 import com.phantom.scroll.data.ScrollSettings
+import com.phantom.scroll.data.ScrollStats
 import com.phantom.scroll.data.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +68,16 @@ class FloatingOverlayView @JvmOverloads constructor(
     private val handleVisualWrap: View
     private val handleVisual: View
 
+    // Phase 3 controls
+    private val chipNovel: TextView
+    private val chipComic: TextView
+    private val chipCustom: TextView
+    private val directionButton: com.google.android.material.button.MaterialButton
+    private val statsRow: View
+    private val statsText: TextView
+    private val perAppSwitch: com.google.android.material.materialswitch.MaterialSwitch
+    private val perAppLabel: TextView
+
     // position / edge state
     private var currentX = 0
     private var currentY = 200
@@ -100,20 +114,64 @@ class FloatingOverlayView @JvmOverloads constructor(
         handleVisualWrap = findViewById(R.id.handle_visual_wrap)
         handleVisual = findViewById(R.id.handle_visual)
 
+        // Phase 3 controls
+        chipNovel = findViewById(R.id.chip_novel)
+        chipComic = findViewById(R.id.chip_comic)
+        chipCustom = findViewById(R.id.chip_custom)
+        directionButton = findViewById(R.id.direction_button)
+        statsRow = findViewById(R.id.stats_row)
+        statsText = findViewById(R.id.stats_text)
+        perAppSwitch = findViewById(R.id.perapp_switch)
+        perAppLabel = findViewById(R.id.perapp_label)
+
         // user → repository (only for genuine user changes)
         durationSlider.addOnChangeListener { _, value, fromUser ->
-            if (fromUser && !applyingFromFlow) updateSetting { it.copy(duration = value.toLong()) }
+            if (fromUser && !applyingFromFlow) updateActive { it.copy(duration = value.toLong()) }
         }
         intervalSlider.addOnChangeListener { _, value, fromUser ->
-            if (fromUser && !applyingFromFlow) updateSetting { it.copy(interval = value.toLong()) }
+            if (fromUser && !applyingFromFlow) updateActive { it.copy(interval = value.toLong()) }
         }
         distanceSlider.addOnChangeListener { _, value, fromUser ->
-            if (fromUser && !applyingFromFlow) updateSetting { it.copy(distanceRatio = value) }
+            if (fromUser && !applyingFromFlow) updateActive { it.copy(distanceRatio = value) }
         }
 
         handleRoot.setOnClickListener { panelStateFlow?.value = PanelState.Expanded }
         foldButton.setOnClickListener { panelStateFlow?.value = PanelState.Collapsed }
         playButton.setOnClickListener { repository?.toggleRunning() }
+
+        chipNovel.setOnClickListener { scope.launch { repository?.applyPreset(Preset.NOVEL) } }
+        chipComic.setOnClickListener { scope.launch { repository?.applyPreset(Preset.COMIC) } }
+        // 自定义 Chip 不可点（它是"未命中预设"的派生态）；点击无效即可。
+
+        directionButton.setOnClickListener {
+            val repo = repository ?: return@setOnClickListener
+            val active = repo.activeSettings.value
+            val next = if (active.direction == ScrollDirection.UP) ScrollDirection.DOWN else ScrollDirection.UP
+            scope.launch { repo.updateActive(active.copy(direction = next)) }
+        }
+
+        statsRow.setOnClickListener {
+            val repo = repository ?: return@setOnClickListener
+            scope.launch {
+                repo.resetStats()
+                PhantomToast.show(context, "统计已重置")
+            }
+        }
+
+        perAppSwitch.setOnCheckedChangeListener { _, checked ->
+            // 避免程序化 setChecked 触发写：用 applyingFromFlow 守卫（复用现有标志）
+            if (applyingFromFlow) return@setOnCheckedChangeListener
+            repository?.setPerAppEnabled(checked)
+        }
+
+        perAppLabel.setOnLongClickListener {
+            val repo = repository ?: return@setOnLongClickListener false
+            scope.launch {
+                repo.forgetActiveProfile()
+                PhantomToast.show(context, "已忘记当前 App 配置")
+            }
+            true
+        }
 
         applyState(PanelState.Expanded) // default: panel visible, handle hidden
         applyRunning(false)
@@ -154,12 +212,16 @@ class FloatingOverlayView @JvmOverloads constructor(
         val flow = panelStateFlow ?: return
         collectJob = scope.launch {
             launch { flow.collect { applyState(it) } }
-            launch { repo.global.collect { applySettings(it) } }
+            launch { repo.activeSettings.collect { applySettings(it) } }
             launch { repo.isRunning.collect { applyRunning(it) } }
             launch {
                 combine(repo.screenWidth, repo.screenHeight) { w, h -> w to h }
                     .collect { repositionToBounds(it.first, it.second) }
             }
+            launch { repo.selectedPreset.collect { applyPresetSelection(it) } }
+            launch { repo.stats.collect { applyStats(it) } }
+            launch { repo.perAppEnabled.collect { applyPerAppEnabled(it) } }
+            launch { repo.currentPackage.collect { applyCurrentPackage(it) } }
         }
     }
 
@@ -186,6 +248,8 @@ class FloatingOverlayView @JvmOverloads constructor(
         durationValue.text = "${s.duration}ms"
         intervalValue.text = String.format("%.1fs", s.interval / 1000f)
         distanceValue.text = "${(s.distanceRatio * 100).toInt()}%"
+        // direction button glyph tracks the active direction (Task 9)
+        directionButton.text = if (s.direction == ScrollDirection.DOWN) "↓" else "↑"
     }
 
     private fun applyRunning(running: Boolean) {
@@ -198,9 +262,58 @@ class FloatingOverlayView @JvmOverloads constructor(
         playButton.backgroundTintList = android.content.res.ColorStateList.valueOf(color)
     }
 
-    private fun updateSetting(transform: (ScrollSettings) -> ScrollSettings) {
+    private fun applyPresetSelection(sel: PresetSelection) {
+        // single-select highlight: selected chip uses the selected bg + cyan text
+        val selectedBg = ResourcesCompat.getDrawable(resources, R.drawable.overlay_chip_bg_selected, null)
+        val plainBg = ResourcesCompat.getDrawable(resources, R.drawable.overlay_chip_bg, null)
+        val cyan = ResourcesCompat.getColor(resources, R.color.phantom_cyan, null)
+        val plain = ResourcesCompat.getColor(resources, R.color.text_primary, null)
+        listOf(
+            chipNovel to (sel is PresetSelection.BuiltIn && sel.preset == Preset.NOVEL),
+            chipComic to (sel is PresetSelection.BuiltIn && sel.preset == Preset.COMIC),
+            chipCustom to (sel is PresetSelection.Custom)
+        ).forEach { (chip, on) ->
+            chip.background = if (on) selectedBg else plainBg
+            chip.setTextColor(if (on) cyan else plain)
+        }
+    }
+
+    private fun applyStats(stats: ScrollStats) {
+        // spec §3.2: elapsed shown in minutes, Math.round(elapsedMs / 60000.0)
+        val minutes = Math.round(stats.elapsedMs / 60000.0)
+        statsText.text = "已翻 ${stats.swipeCount} 次 · 约 $minutes 分钟"
+    }
+
+    private fun applyPerAppEnabled(enabled: Boolean) {
+        applyingFromFlow = true
+        perAppSwitch.isChecked = enabled
+        applyingFromFlow = false
+        updatePerAppLabelVisibility()
+    }
+
+    private fun applyCurrentPackage(pkg: String?) {
+        updatePerAppLabelVisibility()
+    }
+
+    private fun updatePerAppLabelVisibility() {
         val repo = repository ?: return
-        scope.launch { repo.updateGlobal(transform(repo.global.value)) }
+        val pkg = repo.currentPackage.value
+        val enabled = repo.perAppEnabled.value
+        perAppLabel.visibility = if (pkg != null && enabled) VISIBLE else GONE
+        perAppLabel.text = if (pkg != null) "📖 当前：$pkg" else ""
+        // 用包名做展示名（避免引 PackageManager 解析 label 的开销与权限故事）；
+        // 若需友好名，Phase 4 再加 PackageManager 缓存。
+    }
+
+    private object PhantomToast {
+        fun show(ctx: Context, msg: String) {
+            android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun updateActive(transform: (ScrollSettings) -> ScrollSettings) {
+        val repo = repository ?: return
+        scope.launch { repo.updateActive(transform(repo.activeSettings.value)) }
     }
 
     private fun repositionToBounds(screenWidth: Int, screenHeight: Int) {
