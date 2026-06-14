@@ -56,8 +56,10 @@ class SettingsRepository(
     // dynamic display dimensions (pixels)
     private val _screenWidth = MutableStateFlow(0)
     val screenWidth: StateFlow<Int> = _screenWidth.asStateFlow()
+    val screenWidthMutable: MutableStateFlow<Int> get() = _screenWidth
     private val _screenHeight = MutableStateFlow(0)
     val screenHeight: StateFlow<Int> = _screenHeight.asStateFlow()
+    val screenHeightMutable: MutableStateFlow<Int> get() = _screenHeight
 
     fun setScreenWidth(value: Int) { _screenWidth.value = value }
     fun setScreenHeight(value: Int) { _screenHeight.value = value }

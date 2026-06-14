@@ -1,70 +1,52 @@
 package com.phantom.scroll.config
 
-import android.content.Context
-import android.content.SharedPreferences
-import android.content.res.Resources
-import android.util.DisplayMetrics
+import com.phantom.scroll.data.FakeProfileStore
+import com.phantom.scroll.data.ScrollSettings
+import com.phantom.scroll.data.SettingsRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Before
 import org.junit.Test
-import org.mockito.kotlin.*
 
+/**
+ * Phase 1: ScrollConfig is now a @Deprecated bridge over SettingsRepository.
+ * These tests cover only bridge adapter behavior; persistence/active-resolution coverage
+ * lives in SettingsRepositoryTest. The bridge's long-lived collectors are isolated in a
+ * detached dispatcher-shared scope so runTest can finalize.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ScrollConfigTest {
 
-    private val sharedPreferences: SharedPreferences = mock()
-    private val editor: SharedPreferences.Editor = mock()
-    private val context: Context = mock()
-    private val resources: Resources = mock()
-    private val displayMetrics = DisplayMetrics().apply {
-        widthPixels = 1080
-        heightPixels = 2400
-    }
-
-    private val testDispatcher = StandardTestDispatcher()
-    private val testScope = TestScope(testDispatcher)
-
-    @Before
-    fun setUp() {
-        whenever(context.getSharedPreferences(any(), any())).thenReturn(sharedPreferences)
-        whenever(context.resources).thenReturn(resources)
-        whenever(resources.displayMetrics).thenReturn(displayMetrics)
-        
-        whenever(sharedPreferences.edit()).thenReturn(editor)
-        whenever(editor.putLong(any(), any())).thenReturn(editor)
-        whenever(editor.putFloat(any(), any())).thenReturn(editor)
-        
-        // Setup defaults in mock shared preferences
-        whenever(sharedPreferences.getLong(eq("scroll_duration"), any())).thenReturn(600L)
-        whenever(sharedPreferences.getLong(eq("scroll_interval"), any())).thenReturn(3000L)
-        whenever(sharedPreferences.getFloat(eq("scroll_distance_ratio"), any())).thenReturn(0.80f)
+    @Suppress("DEPRECATION")
+    private fun TestScope.makeConfig(global: ScrollSettings): ScrollConfig {
+        // Detached job (independent of the TestScope's job) but shared TestDispatcher,
+        // so advanceUntilIdle() drives the bridge's collectors while runTest can complete.
+        val scope = CoroutineScope(coroutineContext + Job())
+        val store = FakeProfileStore().apply { this.global = global }
+        val repo = SettingsRepository(store, scope)
+        return ScrollConfig(repo, scope)
     }
 
     @Test
-    fun testScrollConfig_initialization() = testScope.runTest {
-        val config = ScrollConfig(context, testScope.backgroundScope)
-
-        // Verify loaded properties from shared preferences
-        assertEquals(600L, config.scrollDuration.value)
-        assertEquals(3000L, config.scrollInterval.value)
-        assertEquals(0.80f, config.scrollDistanceRatio.value)
-
-        // Verify initial screen dimensions
-        assertEquals(1080, config.screenWidth.value)
-        assertEquals(2400, config.screenHeight.value)
+    fun bridge_seeds_field_flows_from_repository_global() = runTest {
+        val config = makeConfig(ScrollSettings(duration = 650L, interval = 2500L, distanceRatio = 0.8f))
+        advanceUntilIdle() // let repo load + bridge onEach propagate
+        assertEquals(650L, config.scrollDuration.value)
+        assertEquals(2500L, config.scrollInterval.value)
+        assertEquals(0.8f, config.scrollDistanceRatio.value)
     }
 
     @Test
-    fun testScrollConfig_snapshot() = testScope.runTest {
-        val config = ScrollConfig(context, testScope.backgroundScope)
-        val snapshot = config.snapshot()
-
-        assertEquals(600L, snapshot.duration)
-        assertEquals(3000L, snapshot.interval)
-        assertEquals(0.80f, snapshot.distanceRatio)
+    fun snapshot_reflects_active_settings() = runTest {
+        val config = makeConfig(ScrollSettings(duration = 700L, interval = 3000L, distanceRatio = 0.55f))
+        advanceUntilIdle()
+        val snap = config.snapshot()
+        assertEquals(700L, snap.duration)
+        assertEquals(3000L, snap.interval)
+        assertEquals(0.55f, snap.distanceRatio)
     }
 }
