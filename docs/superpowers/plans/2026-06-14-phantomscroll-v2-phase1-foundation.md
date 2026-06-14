@@ -823,6 +823,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -886,39 +887,46 @@ class SettingsRepository(
             _profiles.value = store.loadProfiles()
             _perAppEnabled.value = store.loadPerAppEnabled()
             _stats.value = store.loadStats()
-        }
 
-        // Debounced persistence collectors (drop first = initial seed).
-        scope.launch {
-            _global.drop(1).debounce(PERSIST_DEBOUNCE_MS).collect { store.saveGlobal(it) }
-        }
-        scope.launch {
-            _profiles.drop(1).debounce(PERSIST_DEBOUNCE_MS).collect { store.saveAllProfiles(it) }
-        }
-        scope.launch {
-            _perAppEnabled.drop(1).debounce(PERSIST_DEBOUNCE_MS).collect { store.savePerAppEnabled(it) }
-        }
-        scope.launch {
-            _stats.drop(1).debounce(PERSIST_DEBOUNCE_MS).collect { store.saveStats(it) }
+            // Start persistence collectors after initial load completes.
+            // drop(1) filters out the loaded values, collecting subsequent mutations only.
+            launch {
+                _global.drop(1).debounce(PERSIST_DEBOUNCE_MS).collect { store.saveGlobal(it) }
+            }
+            launch {
+                _profiles.drop(1).debounce(PERSIST_DEBOUNCE_MS).collect { store.saveAllProfiles(it) }
+            }
+            launch {
+                _perAppEnabled.drop(1).debounce(PERSIST_DEBOUNCE_MS).collect { store.savePerAppEnabled(it) }
+            }
+            launch {
+                _stats.drop(1).debounce(PERSIST_DEBOUNCE_MS).collect { store.saveStats(it) }
+            }
         }
     }
 
     // ---- mutations ----
     suspend fun updateGlobal(settings: ScrollSettings) { _global.value = settings }
     suspend fun upsertProfile(packageName: String, settings: ScrollSettings) {
-        _profiles.value = _profiles.value + (packageName to AppProfile(packageName, settings))
+        _profiles.update { current ->
+            current + (packageName to AppProfile(packageName, settings))
+        }
     }
     suspend fun deleteProfile(packageName: String) {
-        _profiles.value = _profiles.value - packageName
+        _profiles.update { current ->
+            current - packageName
+        }
     }
     fun setCurrentPackage(packageName: String?) { _currentPackage.value = packageName }
     fun setPerAppEnabled(enabled: Boolean) { _perAppEnabled.value = enabled }
 
     fun incrementStats(swipeDelta: Long = 1, elapsedDeltaMs: Long) {
-        _stats.value = ScrollStats(
-            swipeCount = _stats.value.swipeCount + swipeDelta,
-            elapsedMs = _stats.value.elapsedMs + elapsedDeltaMs
-        )
+        _stats.update { current ->
+            current.copy(
+                swipeCount = current.swipeCount + swipeDelta,
+                elapsedMs = current.elapsedMs + elapsedDeltaMs
+            )
+        }
     }
     fun resetStats() { _stats.value = ScrollStats.ZERO }
 
@@ -1310,7 +1318,7 @@ Edit `app/src/main/java/com/phantom/scroll/data/SettingsRepository.kt`，在 `re
     /** Starts autoscroll (runtime-only). */
     fun startRunning() { _isRunning.value = true }
     /** Toggles autoscroll (runtime-only). */
-    fun toggleRunning() { _isRunning.value = !_isRunning.value }
+    fun toggleRunning() { _isRunning.update { !it } }
 ```
 
 Edit `app/src/main/java/com/phantom/scroll/service/FailurePolicy.kt`，在 `recordSuccess()` 之后追加：
