@@ -89,6 +89,7 @@ class FloatingOverlayView @JvmOverloads constructor(
     private var lastRawX = 0f
     private var lastRawY = 0f
     private var dragging = false
+    private var disallowIntercept = false
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private var snapAnimator: ValueAnimator? = null
 
@@ -367,26 +368,38 @@ class FloatingOverlayView @JvmOverloads constructor(
      * taps don't move so they aren't stolen.
      */
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
-        when (ev.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                snapAnimator?.cancel()
-                downRawX = ev.rawX; downRawY = ev.rawY
-                lastRawX = ev.rawX; lastRawY = ev.rawY
-                dragging = false
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            snapAnimator?.cancel()
+            downRawX = ev.rawX; downRawY = ev.rawY
+            lastRawX = ev.rawX; lastRawY = ev.rawY
+            dragging = false
 
-                // Do not intercept if user touches interactive children to avoid click cancellation or slider lag.
-                val inInteractive = isTouchInsideView(ev, durationSlider) ||
-                        isTouchInsideView(ev, intervalSlider) ||
-                        isTouchInsideView(ev, distanceSlider) ||
-                        isTouchInsideView(ev, playButton) ||
-                        isTouchInsideView(ev, foldButton)
-                if (inInteractive) return false
-            }
+            // Do not intercept if user touches interactive children to avoid click cancellation or slider lag.
+            val inInteractive = isTouchInsideView(ev, durationSlider) ||
+                    isTouchInsideView(ev, intervalSlider) ||
+                    isTouchInsideView(ev, distanceSlider) ||
+                    isTouchInsideView(ev, playButton) ||
+                    isTouchInsideView(ev, foldButton) ||
+                    isTouchInsideView(ev, chipNovel) ||
+                    isTouchInsideView(ev, chipComic) ||
+                    isTouchInsideView(ev, chipCustom) ||
+                    isTouchInsideView(ev, directionButton) ||
+                    isTouchInsideView(ev, statsRow) ||
+                    isTouchInsideView(ev, perAppSwitch)
+            disallowIntercept = inInteractive
+        }
+
+        if (disallowIntercept) return false
+
+        when (ev.actionMasked) {
             MotionEvent.ACTION_MOVE -> {
                 if (!dragging &&
                     (abs(ev.rawX - downRawX) > touchSlop || abs(ev.rawY - downRawY) > touchSlop)) {
                     dragging = true
                 }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                disallowIntercept = false
             }
         }
         return dragging
@@ -432,6 +445,7 @@ class FloatingOverlayView @JvmOverloads constructor(
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                disallowIntercept = false
                 if (dragging) {
                     dragging = false
                     performSnap()
