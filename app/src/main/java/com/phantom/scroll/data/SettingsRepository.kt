@@ -111,6 +111,12 @@ class SettingsRepository(
     fun setCurrentPackage(packageName: String?) { _currentPackage.value = packageName }
     fun setPerAppEnabled(enabled: Boolean) { _perAppEnabled.value = enabled }
     fun setRunning(value: Boolean) { _isRunning.value = value }
+    /** Stops autoscroll (runtime-only). Used by failure auto-pause and external stop. */
+    fun stopRunning() { setRunning(false) }
+    /** Starts autoscroll (runtime-only). */
+    fun startRunning() { setRunning(true) }
+    /** Toggles autoscroll (runtime-only). */
+    fun toggleRunning() { setRunning(!_isRunning.value) }
 
     fun incrementStats(swipeDelta: Long = 1, elapsedDeltaMs: Long) {
         _stats.update { current ->

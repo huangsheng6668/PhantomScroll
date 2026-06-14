@@ -37,4 +37,7 @@ class FailurePolicy(private val threshold: Int = 3) {
     fun recordSuccess() {
         consecutive = 0
     }
+
+    /** Current consecutive failure count since the last success (read-only, for logging). */
+    fun runsAfterLastSuccess(): Int = consecutive
 }
