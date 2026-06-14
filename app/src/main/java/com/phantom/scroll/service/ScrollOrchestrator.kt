@@ -42,7 +42,8 @@ class ScrollOrchestrator(
                             screenWidth = screenWidth,
                             screenHeight = screenHeight,
                             distanceRatio = settings.distanceRatio,
-                            durationMs = settings.duration
+                            durationMs = settings.duration,
+                            direction = settings.direction
                         )
                     }
 
@@ -85,6 +86,8 @@ class ScrollOrchestrator(
 
                     val noiseInterval = gestureEngine.addBioNoise(settings.interval.toFloat(), 0.08f)
                         .toLong().coerceIn(400, 12000)
+                    // spec §3.2: count one successful swipe + accumulate the wait as elapsed time.
+                    repository.incrementStats(swipeDelta = 1, elapsedDeltaMs = noiseInterval)
                     delay(noiseInterval)
 
                 } catch (e: CancellationException) {
