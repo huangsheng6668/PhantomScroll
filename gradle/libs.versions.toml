@@ -6,6 +6,7 @@ core-ktx = "1.13.1"
 lifecycle = "2.8.7"
 activity-compose = "1.9.3"
 coroutines = "1.9.0"
+datastore = "1.1.1"
 savedstate = "1.2.1"
 appcompat = "1.7.0"
 junit = "4.13.2"
@@ -37,6 +38,9 @@ androidx-activity-compose = { group = "androidx.activity", name = "activity-comp
 # Coroutines
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+
+# DataStore (persistence)
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 
 # SavedState (required by OverlayLifecycleOwner)
 androidx-savedstate = { group = "androidx.savedstate", name = "savedstate", version.ref = "savedstate" }

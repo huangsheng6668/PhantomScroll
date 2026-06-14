@@ -81,6 +81,8 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.savedstate)
     implementation(libs.kotlinx.coroutines.android)
+    // DataStore (async persistence, replaces SharedPreferences)
+    implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.core)
 
     // Compose BOM
