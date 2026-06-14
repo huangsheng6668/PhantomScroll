@@ -50,6 +50,9 @@ class SettingsRepository(
     private val _isRunning = MutableStateFlow(false)
     val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
 
+    /** Mutable handle for components that drive isRunning directly (ScreenStateCoordinator). */
+    val isRunningMutable: MutableStateFlow<Boolean> get() = _isRunning
+
     // dynamic display dimensions (pixels)
     private val _screenWidth = MutableStateFlow(0)
     val screenWidth: StateFlow<Int> = _screenWidth.asStateFlow()
