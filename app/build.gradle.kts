@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.androidx.baselineprofile)
 }
 
 android {
@@ -82,6 +83,10 @@ dependencies {
     // Material Components (native overlay Slider)
     implementation(libs.google.material)
     implementation(libs.androidx.savedstate)
+    // Link to the baselineprofile generator module (Phase 4)
+    baselineProfile(project(":baselineprofile"))
+    // Runtime distribution of Baseline Profiles (Phase 4)
+    implementation(libs.androidx.profileinstaller)
     implementation(libs.kotlinx.coroutines.android)
     // DataStore (async persistence, replaces SharedPreferences)
     implementation(libs.androidx.datastore.preferences)

@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "PhantomScroll"
 include(":app")
+include(":baselineprofile")
