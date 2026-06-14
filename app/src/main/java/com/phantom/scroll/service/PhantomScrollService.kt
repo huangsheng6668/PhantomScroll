@@ -3,7 +3,6 @@ package com.phantom.scroll.service
 import android.accessibilityservice.AccessibilityService
 import android.content.res.Configuration
 import android.widget.Toast
-import com.phantom.scroll.config.ScrollConfig
 import com.phantom.scroll.data.DataStoreProfileStore
 import com.phantom.scroll.data.SettingsRepository
 import com.phantom.scroll.notification.NotificationHelper
@@ -17,9 +16,6 @@ import kotlinx.coroutines.flow.collectLatest
  * Main accessibility service coordinator for PhantomScroll.
  * Owns the [SettingsRepository] (single source of truth) and delegates behavior to
  * [FloatingWindowController], [ScrollOrchestrator], [ServiceEventReceiver].
- *
- * NOTE: [config] is a @Deprecated bridge kept only so the Compose FloatingPanel compiles
- * until Phase 2 replaces it with a native overlay. New code must use [repository].
  */
 class PhantomScrollService : AccessibilityService() {
 
@@ -27,9 +23,6 @@ class PhantomScrollService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     val repository by lazy { SettingsRepository(DataStoreProfileStore(this), serviceScope) }
-
-    @Deprecated("Bridge to repository; removed in Phase 2. Use repository instead.")
-    val config by lazy { ScrollConfig(repository, serviceScope) }
 
     val panelStateFlow = MutableStateFlow(PanelState.Expanded)
 
@@ -46,7 +39,7 @@ class PhantomScrollService : AccessibilityService() {
         repository.setScreenWidth(dm.widthPixels)
         repository.setScreenHeight(dm.heightPixels)
 
-        floatingWindowController = FloatingWindowController(this, config, serviceScope, panelStateFlow)
+        floatingWindowController = FloatingWindowController(this, repository, serviceScope, panelStateFlow)
         scrollOrchestrator = ScrollOrchestrator(this, repository, serviceScope)
         eventReceiver = ServiceEventReceiver(this, repository) { disableSelf() }
 
