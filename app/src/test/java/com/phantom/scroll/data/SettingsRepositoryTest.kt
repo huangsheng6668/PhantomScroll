@@ -133,4 +133,86 @@ class SettingsRepositoryTest {
         val repo = repoWith(FakeProfileStore())
         assertNull(repo.currentPackage.value)
     }
+
+    @Test
+    fun applyPreset_writes_preset_settings_to_activeSettings() = runTest {
+        val store = FakeProfileStore()
+        val repo = repoWith(store)
+        repo.applyPreset(Preset.NOVEL)
+        advanceUntilIdle()
+        assertEquals(Preset.NOVEL.settings, repo.activeSettings.value)
+        assertEquals(Preset.NOVEL.settings, store.global)
+    }
+
+    @Test
+    fun applyPreset_writes_to_profile_when_perApp_on_and_pkg_known() = runTest {
+        val store = FakeProfileStore()
+        val repo = repoWith(store)
+        repo.setPerAppEnabled(true)
+        repo.setCurrentPackage("com.example.novel")
+        repo.applyPreset(Preset.NOVEL)
+        advanceUntilIdle()
+        assertEquals(Preset.NOVEL.settings, store.profiles["com.example.novel"]?.settings)
+        // global untouched
+        assertEquals(ScrollSettings.DEFAULT, repo.global.value)
+    }
+
+    @Test
+    fun selectedPreset_tracks_activeSettings() = runTest {
+        val repo = repoWith(FakeProfileStore())
+        assertEquals(PresetSelection.Custom, repo.selectedPreset.value)
+        repo.applyPreset(Preset.COMIC)
+        advanceUntilIdle()
+        assertEquals(PresetSelection.BuiltIn(Preset.COMIC), repo.selectedPreset.value)
+    }
+
+    @Test
+    fun updateActive_writes_profile_when_perApp_on_and_pkg_known() = runTest {
+        val store = FakeProfileStore()
+        val repo = repoWith(store)
+        repo.setPerAppEnabled(true)
+        repo.setCurrentPackage("com.example.novel")
+        val s = ScrollSettings(duration = 600L, interval = 2000L, distanceRatio = 0.6f)
+        repo.updateActive(s)
+        advanceUntilIdle()
+        assertEquals(s, store.profiles["com.example.novel"]?.settings)
+        // global untouched
+        assertEquals(ScrollSettings.DEFAULT, repo.global.value)
+    }
+
+    @Test
+    fun updateActive_writes_global_when_perApp_off() = runTest {
+        val store = FakeProfileStore()
+        val repo = repoWith(store)
+        // perApp default off, no currentPackage
+        val s = ScrollSettings(duration = 650L, interval = 2100L, distanceRatio = 0.66f)
+        repo.updateActive(s)
+        advanceUntilIdle()
+        assertEquals(s, repo.global.value)
+        assertEquals(s, store.global)
+        assertTrue(store.profiles.isEmpty())
+    }
+
+    @Test
+    fun forgetActiveProfile_removes_current_pkg_profile() = runTest {
+        val store = FakeProfileStore().apply {
+            profiles["com.example.novel"] = AppProfile("com.example.novel", ScrollSettings.DEFAULT)
+        }
+        val repo = repoWith(store)
+        repo.setPerAppEnabled(true)
+        repo.setCurrentPackage("com.example.novel")
+        advanceUntilIdle()
+        repo.forgetActiveProfile()
+        advanceUntilIdle()
+        assertNull(store.profiles["com.example.novel"])
+    }
+
+    @Test
+    fun forgetActiveProfile_no_op_when_no_current_pkg() = runTest {
+        val store = FakeProfileStore()
+        val repo = repoWith(store)
+        repo.forgetActiveProfile() // currentPackage null → no-op, no crash
+        advanceUntilIdle()
+        assertTrue(store.profiles.isEmpty())
+    }
 }
