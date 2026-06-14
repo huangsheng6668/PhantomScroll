@@ -23,7 +23,7 @@ class BaselineProfileGenerator {
     val baselineRule = BaselineProfileRule()
 
     @Test
-    fun generate() = baselineRule.collect("phantomscroll-startup") {
+    fun generate() = baselineRule.collect("com.phantom.scroll") {
         // Cold launch the permission screen and wait for the first frame to render.
         // This is the only Compose surface in the app post-Phase-2, so it dominates startup cost.
         pressHome()

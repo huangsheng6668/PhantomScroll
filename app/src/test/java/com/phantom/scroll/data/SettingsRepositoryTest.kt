@@ -215,4 +215,47 @@ class SettingsRepositoryTest {
         advanceUntilIdle()
         assertTrue(store.profiles.isEmpty())
     }
+
+    @Test
+    fun custom_preset_restores_last_custom_settings() = runTest {
+        val store = FakeProfileStore()
+        val repo = repoWith(store)
+        
+        // 1. Initially, default is Custom. Change active settings to custom settings.
+        val customSettings = ScrollSettings(duration = 600L, interval = 2500L, distanceRatio = 0.7f)
+        repo.updateActive(customSettings)
+        advanceUntilIdle()
+        assertEquals(customSettings, repo.activeSettings.value)
+
+        // 2. Change active settings to a built-in preset (Novel).
+        repo.applyPreset(Preset.NOVEL)
+        advanceUntilIdle()
+        assertEquals(Preset.NOVEL.settings, repo.activeSettings.value)
+
+        // 3. Apply custom preset. It should restore customSettings.
+        repo.applyCustomPreset()
+        advanceUntilIdle()
+        assertEquals(customSettings, repo.activeSettings.value)
+    }
+
+    @Test
+    fun custom_preset_falls_back_to_default_when_initially_preset() = runTest {
+        val store = FakeProfileStore().apply {
+            // Simulate that global setting saved in store is a built-in preset (Novel)
+            global = Preset.NOVEL.settings
+        }
+        val repo = repoWith(store)
+        assertEquals(Preset.NOVEL.settings, repo.activeSettings.value)
+
+        // Change to Comic
+        repo.applyPreset(Preset.COMIC)
+        advanceUntilIdle()
+        assertEquals(Preset.COMIC.settings, repo.activeSettings.value)
+
+        // Apply custom preset. Since there was no custom setting yet, it should fall back to DEFAULT.
+        repo.applyCustomPreset()
+        advanceUntilIdle()
+        assertEquals(ScrollSettings.DEFAULT, repo.activeSettings.value)
+    }
 }
+

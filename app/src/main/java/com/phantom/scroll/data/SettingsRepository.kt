@@ -85,11 +85,16 @@ class SettingsRepository(
     init {
         // Async load (DataStore is async I/O) — backfill defaults once read completes.
         scope.launch {
-            _global.value = store.loadGlobal()
+            val globalVal = store.loadGlobal()
+            _global.value = globalVal
             _profiles.value = store.loadProfiles()
             _perAppEnabled.value = store.loadPerAppEnabled()
             _stats.value = store.loadStats()
-            lastCustomSettings = _global.value
+            lastCustomSettings = if (PresetRegistry.selectionFor(globalVal) is PresetSelection.Custom) {
+                globalVal
+            } else {
+                ScrollSettings.DEFAULT
+            }
 
             // Start persistence collectors AFTER the initial load completes.
             // drop(1) filters out the just-loaded values, collecting subsequent mutations only,
@@ -140,7 +145,12 @@ class SettingsRepository(
 
     /** Applies the last custom user settings to active target. */
     suspend fun applyCustomPreset() {
-        updateActive(lastCustomSettings)
+        val target = if (PresetRegistry.selectionFor(lastCustomSettings) is PresetSelection.Custom) {
+            lastCustomSettings
+        } else {
+            ScrollSettings.DEFAULT
+        }
+        updateActive(target)
     }
 
     /** Forgets the current package's profile so activeSettings falls back to global. No-op if no

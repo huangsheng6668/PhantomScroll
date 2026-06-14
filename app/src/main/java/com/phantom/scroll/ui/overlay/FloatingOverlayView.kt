@@ -69,6 +69,7 @@ class FloatingOverlayView @JvmOverloads constructor(
     private val handleVisual: View
 
     // Phase 3 controls
+    private val presetRow: View
     private val chipNovel: TextView
     private val chipComic: TextView
     private val chipCustom: TextView
@@ -116,6 +117,7 @@ class FloatingOverlayView @JvmOverloads constructor(
         handleVisual = findViewById(R.id.handle_visual)
 
         // Phase 3 controls
+        presetRow = findViewById(R.id.preset_row)
         chipNovel = findViewById(R.id.chip_novel)
         chipComic = findViewById(R.id.chip_comic)
         chipCustom = findViewById(R.id.chip_custom)
@@ -380,9 +382,7 @@ class FloatingOverlayView @JvmOverloads constructor(
                     isTouchInsideView(ev, distanceSlider) ||
                     isTouchInsideView(ev, playButton) ||
                     isTouchInsideView(ev, foldButton) ||
-                    isTouchInsideView(ev, chipNovel) ||
-                    isTouchInsideView(ev, chipComic) ||
-                    isTouchInsideView(ev, chipCustom) ||
+                    isTouchInsideView(ev, presetRow) ||
                     isTouchInsideView(ev, directionButton) ||
                     isTouchInsideView(ev, statsRow) ||
                     isTouchInsideView(ev, perAppSwitch)
