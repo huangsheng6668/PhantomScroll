@@ -14,13 +14,13 @@
 2. **微服务化单进程架构与极限性能优化**
    - **移除前台服务依赖**：完全停用 `startForeground()`，改用常规状态通知，免去了 Google Play 应用商店前台服务数据同步权限的严格红线审查。
    - **单进程架构合并**：取消了 `:accessibility` 独立子进程，将所有功能合并至主进程中运行。消除了 20~30MB 的 IPC 内存垃圾开销，并解决了 SharedPreferences 跨进程数据不安全问题。
-   - **SharedPreferences 持久化节流**：在 [ScrollConfig.kt](file:///E:/github_project/PhantomScroll/app/src/main/java/com/phantom/scroll/config/ScrollConfig.kt) 中引入 `.drop(1).debounce(500)`，杜绝了用户拖拽 Slider 时高频磁盘 I/O 所引发的线程阻塞和卡顿。
+   - **DataStore 持久化节流**：在 [SettingsRepository.kt](app/src/main/java/com/phantom/scroll/data/SettingsRepository.kt) 中以 `MutableStateFlow` + `.drop(1).debounce(500)` 写回 Preferences DataStore，杜绝用户拖拽 Slider 时高频磁盘 I/O 所引发的线程阻塞和卡顿（V2 起从 SharedPreferences 迁移至 DataStore）。
    - **主/后台线程隔离与零 GC 消耗 (Zero GC)**：所有数学计算和 Bio-Noise 生成异步在 `Dispatchers.Default` 进行。在服务生命周期内复用同一个 `Path` 对象并通过 `reset()` 清理，实现滑动循环 0 GC 消耗。
    - **无阻挂起定时器**：使用协程的 `delay()` 挂起函数替代传统的 Timer 线程，保证等待期间 CPU 核心可休眠，极致省电。
 
-3. **智能边缘吸附悬浮窗 (Compose Snapping Floating Panel)**
-   - 使用系统 `WindowManager` 动态注入全局悬浮窗，基于 Jetpack Compose 构建极致轻量的暗黑高对比度 UI。
-   - **局部重组优化 (Local Recomposition)**：将 `collectAsState()` 订阅由顶层卡片下沉至各 Slider 内部。拖拽单个 Slider 时仅该组件重新绘制，面板其他部分保持静态，拖动性能提升 4 倍。
+3. **智能边缘吸附悬浮窗 (Native Snapping Floating Panel)**
+   - 使用系统 `WindowManager` 动态注入全局悬浮窗，**主界面用 Jetpack Compose；悬浮窗用原生 View + Material Components**（V2 Phase 2 起，阅读期不再常驻 Compose 运行时，内存更低）。
+   - **命令式刷新**：`FloatingOverlayView` 收集 `SettingsRepository` 的 `StateFlow` 并命令式刷新 View，无重组开销。
    - **吸附状态机 (State Machine)**：支持 `Expanded`（展开面板）、`Snapping`（吸附中动画）、`Collapsed`（边缘折叠手柄）三种状态。
    - **智能边缘靠吸**：拖拽结束时自动计算 X 坐标，平滑吸附至屏幕最近的一侧边缘，并自动折叠为半透明功能手柄。
 
@@ -33,7 +33,7 @@
 ## 🛠️ 技术栈与兼容性
 
 * **开发语言**：Kotlin (Coroutines + Flow)
-* **UI 框架**：Jetpack Compose (ConstraintLayout, PointerInput Dragging, Animatable Animation)
+* **UI**：主界面 Jetpack Compose（权限引导页）；悬浮窗原生 View（WindowManager + Material Components，V2 起移除 Compose 运行时常驻）
 * **系统服务**：AccessibilityService, WindowManager, BroadcastReceiver
 * **单元测试**：JUnit 4, Mockito, mockito-kotlin, kotlinx-coroutines-test
 * **兼容规范**：
@@ -46,43 +46,66 @@
 ## 📂 项目结构
 
 ```
-app/src/main/
-├── java/com/phantom/scroll/
-│   ├── MainActivity.kt          # 引导式权限检查与使用说明主界面
-│   ├── PhantomScrollApp.kt      # Application 初始化入口
-│   │
-│   ├── config/
-│   │   └── ScrollConfig.kt      # 引入 debounce 节流的配置管理与快照机制
-│   │
-│   ├── gesture/
-│   │   └── GestureEngine.kt     # 解耦数学计算的滑动手势坐标/时间生成引擎
-│   │
-│   ├── notification/
-│   │   └── NotificationHelper.kt# 独立的状态通知通道构建器与控制广播
-│   │
-│   ├── service/
-│   │   ├── PhantomScrollService.kt # 薄协调层：无障碍服务生命周期管理
-│   │   ├── FloatingWindowController.kt # 专职全局 WindowManager 悬浮窗的动态加载与管理
-│   │   ├── ScrollOrchestrator.kt  # 控制自动滑动挂起循环、超时兜底及失败保护
-│   │   ├── ServiceEventReceiver.kt# 负责安全的 RECEIVER_NOT_EXPORTED 屏幕/控制广播分发
-│   │   └── OverlayLifecycleOwner.kt# 悬浮窗 Compose ViewTree 生命周期持有者
-│   │
-│   └── ui/
-│       ├── overlay/
-│       │   └── FloatingPanel.kt # 局部重组优化后的悬浮窗控制面板
-│       ├── screen/
-│       │   └── MainScreen.kt    # 权限引导主界面，适配 Android 15 Edge-to-Edge 避让
-│       └── theme/
-│           ├── Color.kt
-│           ├── Theme.kt         # 适配 SDK 35 沉浸式的暗黑透明主题
-│           └── Type.kt
+app/src/main/java/com/phantom/scroll/
+├── PhantomScrollApp.kt          # Application: 通知渠道初始化
+├── MainActivity.kt              # Compose 权限引导页（唯一 Compose 界面）
 │
-└── test/java/com/phantom/scroll/
-    ├── gesture/
-    │   └── GestureEngineTest.kt # 针对解耦数学计算 (GesturePoints) 的本地 JVM 单元测试
-    └── config/
-        └── ScrollConfigTest.kt  # Mock 框架验证 SharedPreferences 的配置读写与快照
+├── data/                        # 【V2】领域模型 + 单一真相源仓库 + DataStore 持久化
+│   ├── ScrollSettings.kt        #   滚动配置（duration/interval/distanceRatio/direction）
+│   ├── ScrollDirection.kt       #   UP / DOWN
+│   ├── AppProfile.kt            #   按 App 的配置覆盖
+│   ├── Preset.kt                #   场景预设（小说/漫画）+ PresetSelection 派生态（自定义）
+│   ├── PresetRegistry.kt        #   纯逻辑：global → 命中预设 / 自定义
+│   ├── ScrollStats.kt           #   运行统计（翻页次数 + 累计时长）
+│   ├── SettingsRepository.kt    #   全局唯一真相源（StateFlow + DataStore 节流写回）
+│   ├── ProfileStore.kt          #   持久化接口
+│   └── DataStoreProfileStore.kt #   DataStore 实现 + SharedPreferencesMigration
+│
+├── gesture/GestureEngine.kt     # 贝塞尔 + Bio-Noise + 方向（UP/DOWN）+ 零 GC Path 复用
+│
+├── notification/NotificationHelper.kt  # 状态通知通道 + 通知 action 广播
+│
+├── service/
+│   ├── PhantomScrollService.kt          # 单一 AccessibilityService，含 per-app 检测
+│   ├── FloatingWindowController.kt      # WindowManager 编排原生悬浮窗
+│   ├── ScrollOrchestrator.kt            # 滑动循环 + 统计累计 + 失败策略
+│   ├── ServiceEventReceiver.kt          # 屏幕状态 / 通知 action 广播
+│   ├── FailurePolicy.kt                 # 纯逻辑：失败计数 / 自动暂停（可单测）
+│   ├── ScreenStateCoordinator.kt        # 纯逻辑：锁屏暂停 / 亮屏恢复（可单测）
+│   └── PerAppDetector.kt                # 纯逻辑：per-app 事件过滤（denylist/去重/防抖）
+│
+├── ui/
+│   ├── overlay/
+│   │   ├── FloatingOverlayView.kt       # 原生悬浮窗（Phase 2 替代 Compose FloatingPanel）
+│   │   ├── PanelState.kt                #   Expanded / Snapping / Collapsed
+│   │   └── OverlayGeometry.kt           #   纯几何：吸附目标 / 边缘 / clamp
+│   ├── screen/MainScreen.kt             # Compose 权限页
+│   └── theme/ (Color.kt / Theme.kt / Type.kt)
+│
+└── util/PhantomLog.kt                   # 编译期门控日志（release 擦除 d/w）
+
+baselineprofile/                         # 【V2 Phase 4】Baseline Profile 生成器（com.android.test）
+└── src/main/java/.../baselineprofile/
+    ├── BaselineProfileGenerator.kt      # 生成 MainActivity 冷启动 profile
+    └── StartupBenchmark.kt              # Macrobenchmark：Profile 前/后冷启动对比
+
+app/src/test/java/com/phantom/scroll/    # 纯逻辑 JVM 单元测试（56 个，无 Robolectric）
+├── data/       (SettingsRepository / ScrollSettings / MigrationMapper / ProfileKeyParsing)
+├── gesture/    (GestureEngine 含方向)
+├── service/    (FailurePolicy / ScreenStateCoordinator / PerAppDetector)
+└── ui/overlay/ (OverlayGeometry)
 ```
+
+---
+
+## 🔧 V2 优化（四阶段）
+
+V2 对项目做了第二轮架构与性能优化，分四个阶段推进（每阶段独立 commit、可单独 revert）：
+
+1. **Phase 1 — 可维护性地基**：引入 `data/` 领域模型与 `SettingsRepository` 单一真相源，持久化解耦为 `ProfileStore` 接口并迁移到 Preferences DataStore（`SharedPreferencesMigration` 自动搬旧 key）；核心循环与状态机纯逻辑抽离（`FailurePolicy` / `ScreenStateCoordinator`）并加单测。**对外行为零变化。**
+2. **Phase 2 — 悬浮窗原生 View 重写**：把悬浮窗从 Compose (`ComposeView`) 重写为原生 View（`FloatingOverlayView` + Material Components），移除阅读时常驻的 Compose 运行时（内存下降）；删除 `FloatingPanel` / `OverlayLifecycleOwner` / `ScrollConfig` 桥接。
+3. **Phase 3 — 产品化功能**：场景预设（小说/漫画/自定义）、运行统计（翻页次数 + 累计分钟，可重置）、滚动方向切换（↑/↓）、按 App 记忆配置（开关可控、自动创建 profile、denylist + 防抖、可忘记）。
+4. **Phase 4 — 性能收尾**：Baseline Profile（`:baselineprofile` 模块，加速 `MainActivity` 冷启动）+ Compose 编译器稳定性报告 + 热路径零分配复核 + 测量留痕。实测数字见 [spec §4.4.1](docs/superpowers/specs/2026-06-14-phantomscroll-v2-optimization-design.md)。
 
 ---
 
@@ -110,9 +133,12 @@ Android 15 强制启用了沉浸式 Edge-to-Edge 视效。为此：
 ```bash
 ./gradlew test
 ```
-该命令会同时测试以下场景：
-- **`GestureEngineTest`**：验证划动点落在合法的屏幕安全区（避开顶部状态栏和底部导航栏）；验证极短（50ms）或极长（5000ms）滑页时间能正确 Coerce 进 `[200, 1500]` ms；验证正态分布的 Bio-Noise 抖动随机数差异性。
-- **`ScrollConfigTest`**：验证从 XML SharedPreferences 初始化及 Snapshot 数据的一致性。
+该命令会测试 **56 个纯逻辑 JVM 单元测试**（无 Robolectric），覆盖：
+- **`GestureEngineTest`**：滑动点落在合法屏幕安全区；极短/极长时间正确 Coerce 进 `[200,1500]`ms；Bio-Noise 抖动差异性；**UP/DOWN 方向翻转**（endY 与 startY 相对关系）。
+- **`SettingsRepositoryTest`**：activeSettings 回落/切换、profile 增删、stats 累加/重置、`applyPreset`/`updateActive`/`forgetActiveProfile`/`selectedPreset` 派生。
+- **`PresetRegistryTest`**：global 命中小说/漫画预设或回落自定义。
+- **`PerAppDetectorTest`**：denylist / 去重 / 自身包名过滤 / 300ms 防抖。
+- **`FailurePolicyTest` / `ScreenStateCoordinatorTest` / `OverlayGeometryTest` / `MigrationMapperTest` / `ProfileKeyParsingTest` / `ScrollSettingsTest`**。
 
 ### 2. 生成 Release 混淆包
 执行以下命令进行编译、R8 资源缩减与代码混淆：
