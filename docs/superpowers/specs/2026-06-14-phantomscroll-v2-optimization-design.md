@@ -441,6 +441,28 @@ denylist：`com.android.systemui`、当前输入法、各个系统的 Launcher�
 - 内存：`dumpsys meminfo` 测阅读时悬浮窗常驻内存（对比 Phase 2 前后，确认 Compose 运行时已消失）。
 - 前后数字写入本 spec 与 README。
 
+#### 4.4.1 实测数据（Phase 4 闸门）
+
+> 测量设备：<待真机测量填入：机型 / API / 是否 emulator>
+> 测量日期：<待真机测量填入：YYYY-MM-DD>
+>
+> **状态：本计划实施环境无 Android SDK / adb / 模拟器，profile 生成与宏基准测量均需真机执行。下列为占位，待真机测量后回填。**
+
+| 指标 | 无 Profile (CompilationMode.None) | 有 Profile (CompilationMode.Partial) | 变化 |
+|------|-----------------------------------|--------------------------------------|------|
+| 冷启动 timeToInitialDisplayMs（中位） | <TBD> ms | <TBD> ms | <TBD −X%> |
+| 冷启动 timeToFullDisplayMs（中位） | <TBD> ms | <TBD> ms | <TBD −X%> |
+
+| 阅读期常驻内存 (dumpsys meminfo TOTAL) | Phase 2 前 | Phase 2 后（当前） | 变化 |
+|----------------------------------------|-----------|--------------------|------|
+| TOTAL PSS | <TBD> MB | <TBD> MB | <TBD −X%> |
+| Compose 运行时常驻 | 存在 | **已移除**（Phase 2 原生悬浮窗） | — |
+
+测量命令：
+- profile 生成：`./gradlew :baselineprofile:generateReleaseBaselineProfile`
+- 宏基准对比：`./gradlew :baselineprofile:connectedReleaseBenchmark`（产物 `app/build/outputs/connected_android_test_additional_output/.../*.json`，含 `startupNoProfile` 与 `startupWithProfile` 两组 `StartupTimingMetric`）
+- 内存：服务运行 ~30s 后 `adb shell dumpsys meminfo com.phantom.scroll`，重点看 TOTAL PSS 与是否还有 `androidx.compose.runtime.*` / `androidx.compose.ui.*` 常驻大块。
+
 ### 4.5 工程化（本期不做）
 
 GitHub Actions CI、versionCode 策略等本期不做，专注主线。
