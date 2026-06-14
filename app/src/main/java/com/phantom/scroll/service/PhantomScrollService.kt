@@ -35,10 +35,12 @@ class PhantomScrollService : AccessibilityService() {
      * own package, and (extensible) Launchers / IMEs. Kept as a field so real-device tweaks are
      * localized. spec §3.4.
      */
-    private val systemPackageDenylist: Set<String> = setOf(
-        "com.android.systemui",
-        packageName // own package
-    )
+    private val systemPackageDenylist: Set<String> by lazy {
+        setOf(
+            "com.android.systemui",
+            packageName // own package
+        )
+    }
 
     private val perAppDetector by lazy { PerAppDetector(ownPackage = packageName, denylist = systemPackageDenylist) }
 
