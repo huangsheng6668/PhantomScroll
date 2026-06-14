@@ -72,14 +72,19 @@
 
 - [ ] **Step 1：版本目录新增 Material 库声明**
 
-在 `gradle/libs.versions.toml` 的 `[versions]` 段追加（`datastore = "1.1.1"` 行之后）：
+在 `gradle/libs.versions.toml` 的 `[versions]` 段追加（`appcompat = "1.7.0"` 行之后、`junit` 行之前）：
 ```toml
 material = "1.12.0"
 ```
-在 `[libraries]` 段追加（DataStore 库声明之后）：
+在 `[libraries]` 段追加（`androidx-appcompat` 声明之后、`# Testing dependencies` 之前）：
 ```toml
-# Material Components (native Slider/MaterialCardView for the overlay)
+# Material Components (native Slider for the overlay)
 google-material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+```
+
+同时更新 `# SavedState` 注释（第 45 行），因 Phase 2 删除 `OverlayLifecycleOwner` 后该注释过时：
+```toml
+# SavedState (required by Compose internals)
 ```
 
 - [ ] **Step 2：app 模块引用 Material 依赖**
@@ -190,9 +195,16 @@ class OverlayGeometryTest {
     }
 
     @Test
-    fun clamp_handles_inverted_or_zero_max_gracefully() {
-        // defensive: if max < min (e.g. very small screen), coerceIn still returns min
+    fun clamp_handles_zero_range() {
+        // defensive: if max == min, coerceIn returns that single valid value
         assertEquals(0, OverlayGeometry.clamp(50, 0, 0))
+    }
+
+    @Test
+    fun clamp_handles_inverted_bounds_gracefully() {
+        // defensive: if max < min (e.g. very small screen), clamp should not crash
+        // and should return min as a safe default
+        assertEquals(0, OverlayGeometry.clamp(50, 0, -10))
     }
 }
 ```
@@ -234,20 +246,24 @@ object OverlayGeometry {
     fun edgeX(isLeftEdge: Boolean, screenWidth: Int, widthPx: Int): Int =
         if (isLeftEdge) 0 else screenWidth - widthPx
 
-    /** Clamps [value] into [min]..[max] (delegates to Int.coerceIn). */
-    fun clamp(value: Int, min: Int, max: Int): Int = value.coerceIn(min, max)
+    /**
+     * Clamps [value] into [min]..[max]. If [max] < [min] (defensive: very small screen),
+     * returns [min] to avoid [IllegalArgumentException] from [coerceIn].
+     */
+    fun clamp(value: Int, min: Int, max: Int): Int =
+        value.coerceIn(min, max.coerceAtLeast(min))
 }
 ```
 
 - [ ] **Step 4：运行测试确认通过**
 
 Run: `./gradlew :app:testDebugUnitTest --tests "com.phantom.scroll.ui.overlay.OverlayGeometryTest"`
-Expected: PASS（5 用例）
+Expected: PASS（6 用例）
 
 - [ ] **Step 5：验证全量单测仍绿**
 
 Run: `./gradlew :app:testDebugUnitTest`
-Expected: PASS（Phase 1 的 30 个 + 本任务 5 个 = 35）
+Expected: PASS（Phase 1 的 30 个 + 本任务 6 个 = 36）
 
 - [ ] **Step 6：Commit**
 
@@ -405,6 +421,7 @@ Create `app/src/main/res/layout/overlay_panel.xml`:
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/panel_root"
     android:layout_width="130dp"
     android:layout_height="wrap_content"
@@ -483,8 +500,7 @@ Create `app/src/main/res/layout/overlay_panel.xml`:
             app:labelBehavior="gone"
             app:thumbColor="@color/phantom_cyan"
             app:trackColorActive="@color/phantom_cyan"
-            app:trackColorInactive="@color/text_tertiary"
-            xmlns:app="http://schemas.android.com/apk/res-auto" />
+            app:trackColorInactive="@color/text_tertiary" />
     </LinearLayout>
 
     <!-- 间隔 (interval) -->
@@ -521,8 +537,7 @@ Create `app/src/main/res/layout/overlay_panel.xml`:
             app:labelBehavior="gone"
             app:thumbColor="@color/phantom_cyan"
             app:trackColorActive="@color/phantom_cyan"
-            app:trackColorInactive="@color/text_tertiary"
-            xmlns:app="http://schemas.android.com/apk/res-auto" />
+            app:trackColorInactive="@color/text_tertiary" />
     </LinearLayout>
 
     <!-- 距离 (distanceRatio) -->
@@ -559,27 +574,31 @@ Create `app/src/main/res/layout/overlay_panel.xml`:
             app:labelBehavior="gone"
             app:thumbColor="@color/phantom_cyan"
             app:trackColorActive="@color/phantom_cyan"
-            app:trackColorInactive="@color/text_tertiary"
-            xmlns:app="http://schemas.android.com/apk/res-auto" />
+            app:trackColorInactive="@color/text_tertiary" />
     </LinearLayout>
 
     <Space
         android:layout_width="match_parent"
         android:layout_height="4dp" />
 
-    <!-- Play / Pause -->
-    <Button
+    <!-- Play / Pause: MaterialButton handles custom backgroundTint and corner radius natively.
+         insetTop/insetBottom=0dp removes MaterialButton's default 6dp vertical insets
+         so android:layout_height="26dp" yields an actual 26dp button. -->
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/play_button"
         android:layout_width="match_parent"
         android:layout_height="26dp"
         android:minWidth="0dp"
         android:minHeight="0dp"
         android:padding="0dp"
-        android:background="@drawable/overlay_play_bg"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
         android:text="▶ 开始"
         android:textColor="@color/text_primary"
         android:textSize="10sp"
-        android:textStyle="bold" />
+        android:textStyle="bold"
+        app:cornerRadius="13dp"
+        app:backgroundTint="@color/success_green" />
 </LinearLayout>
 ```
 
@@ -617,24 +636,15 @@ Create `app/src/main/res/layout/overlay_handle.xml`:
 </FrameLayout>
 ```
 
-- [ ] **Step 3：补两个被引用的 drawable（折叠按钮圆形底、播放按钮圆角底）**
+- [ ] **Step 3：补折叠按钮被引用的 drawable（折叠按钮圆形底）**
 
-布局里折叠按钮（`fold_button`）引用 `@drawable/overlay_fold_bg`，播放按钮（`play_button`）引用 `@drawable/overlay_play_bg`。**`play_button` 的 `android:background="@drawable/overlay_play_bg"` 保留**（圆角 shape 提供轮廓）；其填充色由 `FloatingOverlayView.applyRunning()` 用 `playButton.backgroundTintList` 按 `isRunning` 动态设为 `success_green`（开始态）/ `error_red`（暂停态），覆盖 shape 默认色。
+布局里折叠按钮（`fold_button`）引用 `@drawable/overlay_fold_bg`。播放按钮直接使用 `MaterialButton` 的属性来声明圆角与背景色，无需额外的 background drawable 资源。
 
 Create `app/src/main/res/drawable/overlay_fold_bg.xml`:
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
     <solid android:color="@color/white_10" />
-</shape>
-```
-
-Create `app/src/main/res/drawable/overlay_play_bg.xml`:
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="@color/success_green" />
-    <corners android:radius="13dp" />
 </shape>
 ```
 
@@ -646,7 +656,7 @@ Expected: `BUILD SUCCESSFUL`
 - [ ] **Step 5：Commit**
 
 ```bash
-git add app/src/main/res/layout/overlay_panel.xml app/src/main/res/layout/overlay_handle.xml app/src/main/res/drawable/overlay_fold_bg.xml app/src/main/res/drawable/overlay_play_bg.xml
+git add app/src/main/res/layout/overlay_panel.xml app/src/main/res/layout/overlay_handle.xml app/src/main/res/drawable/overlay_fold_bg.xml
 git commit -m "feat(res): add overlay layouts (panel with Material Sliders + handle)"
 ```
 
@@ -657,7 +667,7 @@ git commit -m "feat(res): add overlay layouts (panel with Material Sliders + han
 **Files:**
 - Create: `app/src/main/java/com/phantom/scroll/ui/overlay/FloatingOverlayView.kt`
 
-> 这是 Phase 2 的核心。`FrameLayout` 子类：构造时 inflate `overlay_panel` + `overlay_handle` 进自身；按 `PanelState` 切可见性；持专属 `CoroutineScope`，`onAttachedToWindow` 启动收集 `repository.global/isRunning/screenWidth/screenHeight` 与 `panelStateFlow`，`onDetachedFromWindow` 取消；滑块/按钮/手柄/折叠的点击与拖拽（`onInterceptTouchEvent` + `onTouchEvent`，滑块自身会 `requestDisallowInterceptTouchEvent` 故不冲突）；拖拽结束用 `ValueAnimator` 250ms 吸附（复用 `OverlayGeometry`）。
+> 这是 Phase 2 的核心。`FrameLayout` 子类：构造时 inflate `overlay_panel` + `overlay_handle` 进自身；按 `PanelState` 切可见性；持专属 `CoroutineScope`，`onAttachedToWindow` 启动收集 `repository.global/isRunning/screenWidth/screenHeight` 与 `panelStateFlow`，`onDetachedFromWindow` 取消；滑块/按钮/手柄/折叠的点击与拖拽。为确保稳健性，`onInterceptTouchEvent` 过滤了交互式子 View 的触摸以防误触取消点击，且在 `ACTION_DOWN` 时取消正在运行的 `snapAnimator` 以防 Grab 冲突；`onTouchEvent` 显式消费 `ACTION_DOWN` 以解决面板背景拖拽失效问题；`applySettings` 采用防御性 `coerceIn` 边界截断。拖拽结束用 `ValueAnimator` 250ms 吸附。
 
 - [ ] **Step 1：实现 FloatingOverlayView**
 
@@ -736,13 +746,14 @@ class FloatingOverlayView @JvmOverloads constructor(
     private var currentY = 200
     private var isLeftEdge = true
 
-    // drag tracking
+    // drag / animation tracking
     private var downRawX = 0f
     private var downRawY = 0f
     private var lastRawX = 0f
     private var lastRawY = 0f
     private var dragging = false
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private var snapAnimator: ValueAnimator? = null
 
     // guard: programmatic slider setValue triggers the change listener; skip repo write then.
     private var applyingFromFlow = false
@@ -844,15 +855,10 @@ class FloatingOverlayView @JvmOverloads constructor(
 
     private fun applySettings(s: ScrollSettings) {
         applyingFromFlow = true
-        if (s.duration.toFloat() in durationSlider.valueFrom..durationSlider.valueTo) {
-            durationSlider.value = s.duration.toFloat()
-        }
-        if (s.interval.toFloat() in intervalSlider.valueFrom..intervalSlider.valueTo) {
-            intervalSlider.value = s.interval.toFloat()
-        }
-        if (s.distanceRatio in distanceSlider.valueFrom..distanceSlider.valueTo) {
-            distanceSlider.value = s.distanceRatio
-        }
+        // Defensive: clamp values to Slider boundaries in case stored data is out-of-bounds.
+        durationSlider.value = s.duration.toFloat().coerceIn(durationSlider.valueFrom, durationSlider.valueTo)
+        intervalSlider.value = s.interval.toFloat().coerceIn(intervalSlider.valueFrom, intervalSlider.valueTo)
+        distanceSlider.value = s.distanceRatio.coerceIn(distanceSlider.valueFrom, distanceSlider.valueTo)
         applyingFromFlow = false
         durationValue.text = "${s.duration}ms"
         intervalValue.text = String.format("%.1fs", s.interval / 1000f)
@@ -875,13 +881,26 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private fun repositionToBounds(screenWidth: Int, screenHeight: Int) {
-        val nx = OverlayGeometry.clamp(currentX, 0, (screenWidth - 100).coerceAtLeast(0))
-        val ny = OverlayGeometry.clamp(currentY, 0, (screenHeight - 200).coerceAtLeast(0))
+        // Use actual measured view dimensions; fallback to 130dp / WRAP height estimates.
+        val panelW = panelRoot.width.takeIf { it > 0 }
+            ?: (130f * resources.displayMetrics.density).toInt()
+        val panelH = panelRoot.height.takeIf { it > 0 }
+            ?: (200f * resources.displayMetrics.density).toInt()
+        val nx = OverlayGeometry.clamp(currentX, 0, (screenWidth - panelW).coerceAtLeast(0))
+        val ny = OverlayGeometry.clamp(currentY, 0, (screenHeight - panelH).coerceAtLeast(0))
         if (nx != currentX || ny != currentY) {
             currentX = nx
             currentY = ny
             onUpdatePosition?.invoke(nx, ny)
         }
+    }
+
+    private fun isTouchInsideView(ev: MotionEvent, view: View): Boolean {
+        if (view.visibility != VISIBLE) return false
+        val loc = IntArray(2)
+        view.getLocationOnScreen(loc)
+        return ev.rawX >= loc[0] && ev.rawX <= loc[0] + view.width &&
+               ev.rawY >= loc[1] && ev.rawY <= loc[1] + view.height
     }
 
     /**
@@ -892,9 +911,18 @@ class FloatingOverlayView @JvmOverloads constructor(
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                snapAnimator?.cancel()
                 downRawX = ev.rawX; downRawY = ev.rawY
                 lastRawX = ev.rawX; lastRawY = ev.rawY
                 dragging = false
+
+                // Do not intercept if user touches interactive children to avoid click cancellation or slider lag.
+                val inInteractive = isTouchInsideView(ev, durationSlider) ||
+                        isTouchInsideView(ev, intervalSlider) ||
+                        isTouchInsideView(ev, distanceSlider) ||
+                        isTouchInsideView(ev, playButton) ||
+                        isTouchInsideView(ev, foldButton)
+                if (inInteractive) return false
             }
             MotionEvent.ACTION_MOVE -> {
                 if (!dragging &&
@@ -913,7 +941,11 @@ class FloatingOverlayView @JvmOverloads constructor(
             if (flow != null && flow.value == PanelState.Expanded) {
                 flow.value = PanelState.Collapsed
             }
-            return false
+            return true
+        }
+        // Consume ACTION_DOWN to ensure subsequent ACTION_MOVE/UP events are delivered to this window.
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            return true
         }
         if (!dragging) return false
         val repo = repository ?: return false
@@ -923,8 +955,13 @@ class FloatingOverlayView @JvmOverloads constructor(
                 val h = repo.screenHeight.value
                 val dx = (ev.rawX - lastRawX).toInt()
                 val dy = (ev.rawY - lastRawY).toInt()
-                currentX = OverlayGeometry.clamp(currentX + dx, 0, w - 100)
-                currentY = OverlayGeometry.clamp(currentY + dy, 0, h - 200)
+                // 130dp panel fallback in px; matches repositionToBounds logic.
+                val panelW = panelRoot.width.takeIf { it > 0 }
+                    ?: (130f * resources.displayMetrics.density).toInt()
+                val panelH = panelRoot.height.takeIf { it > 0 }
+                    ?: (200f * resources.displayMetrics.density).toInt()
+                currentX = OverlayGeometry.clamp(currentX + dx, 0, w - panelW)
+                currentY = OverlayGeometry.clamp(currentY + dy, 0, h - panelH)
                 lastRawX = ev.rawX; lastRawY = ev.rawY
                 onUpdatePosition?.invoke(currentX, currentY)
             }
@@ -950,14 +987,14 @@ class FloatingOverlayView @JvmOverloads constructor(
         isLeftEdge = target.isLeftEdge
         updateHandleEdge()
         flow.value = PanelState.Snapping
-        val anim = ValueAnimator.ofInt(currentX, target.x).apply {
+        snapAnimator = ValueAnimator.ofInt(currentX, target.x).apply {
             duration = 250
             addUpdateListener { a ->
                 currentX = a.animatedValue as Int
                 onUpdatePosition?.invoke(currentX, currentY)
             }
         }
-        anim.start()
+        snapAnimator?.start()
         // Collapse to handle once the snap finishes (small buffer over 250ms).
         postDelayed({ if (flow.value == PanelState.Snapping) flow.value = PanelState.Collapsed }, 270)
     }
@@ -1217,11 +1254,14 @@ git commit -m "refactor(service): FloatingWindowController uses native FloatingO
 
 - [ ] **Step 1：确认无残留引用**
 
-Run（任一）:
+Run（两条，分别检查生产代码和测试代码）:
 ```bash
 grep -rn "FloatingPanel\|OverlayLifecycleOwner\|ScrollConfig\|ConfigSnapshot" app/src/main
+grep -rn "ScrollConfig\|ConfigSnapshot" app/src/test
 ```
-Expected: 仅命中 `ui/overlay/FloatingPanel.kt`、`service/OverlayLifecycleOwner.kt`、`config/ScrollConfig.kt` 自身（它们的定义）。若在 `main` 其它文件命中引用，先处理（说明 Task 7/8 有遗漏）。`ui/theme/Theme.kt` 中的 `OverlayTheme` 若仍被 `MainActivity` 引用则保留（不在删除范围）。
+Expected:
+- `app/src/main`：仅命中待删除文件自身（`FloatingPanel.kt`、`OverlayLifecycleOwner.kt`、`ScrollConfig.kt`）以及 `ScrollSettings.kt` 中一行注释（`/** 与旧 ScrollConfig 默认值一致… */`，无需处理）。若在 `main` 其它 `.kt` 文件命中 `import` 或代码引用，说明 Task 7/8 有遗漏，需先处理。
+- `app/src/test`：仅命中 `ScrollConfigTest.kt` 自身（即将一并删除）。`ui/theme/Theme.kt` 中的 `OverlayTheme` 若仍被 `MainActivity` 引用则保留（不在删除范围）。
 
 - [ ] **Step 2：删除四个文件**
 
@@ -1235,7 +1275,7 @@ git rm app/src/test/java/com/phantom/scroll/config/ScrollConfigTest.kt
 - [ ] **Step 3：验证编译 + 全量单测**
 
 Run: `./gradlew :app:testDebugUnitTest`
-Expected: PASS。测试总数从 Phase 1 的 30 降为 28（移除了 `ScrollConfigTest` 的 2 个；其余：SettingsRepositoryTest 11、FailurePolicyTest 3、ScreenStateCoordinatorTest 4、GestureEngineTest 3、ScrollSettingsTest 1、MigrationMapperTest 3、ProfileKeyParsingTest 3、OverlayGeometryTest 5 = 33，减去 ScrollConfigTest 2 不在 33 内 —— 即总数 33；报告实际数字）。
+Expected: PASS。测试总数 = Phase 1 的 30 + Task 2 新增 OverlayGeometryTest 6 − 本任务删除 ScrollConfigTest 2 = **34**。明细：SettingsRepositoryTest 11、FailurePolicyTest 3、ScreenStateCoordinatorTest 4、GestureEngineTest 3、ScrollSettingsTest 1、MigrationMapperTest 3、ProfileKeyParsingTest 3、OverlayGeometryTest 6 = 34。报告实际数字。
 
 > `app/src/main/java/com/phantom/scroll/config/` 目录删除后若为空可保留空目录或一并删除（Git 不跟踪空目录，无需额外操作）。
 
@@ -1285,7 +1325,7 @@ git commit -m "build: keep Material Slider in R8 release build"
 - [ ] **Step 1：全量单测 + Release 构建绿**
 
 Run: `./gradlew :app:testDebugUnitTest`
-Expected: `BUILD SUCCESSFUL`，全部通过（约 33 个，Phase 1 几何/逻辑 + 新 `OverlayGeometryTest` 5，无 `ScrollConfigTest`）。
+Expected: `BUILD SUCCESSFUL`，全部通过（34 个：Phase 1 原有 28 个几何/逻辑测试 + 新 `OverlayGeometryTest` 6 个，无 `ScrollConfigTest`）。
 Run: `./gradlew assembleRelease`
 Expected: `BUILD SUCCESSFUL`。
 
