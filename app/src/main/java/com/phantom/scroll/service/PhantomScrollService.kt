@@ -30,6 +30,18 @@ class PhantomScrollService : AccessibilityService() {
     private lateinit var scrollOrchestrator: ScrollOrchestrator
     private lateinit var eventReceiver: ServiceEventReceiver
 
+    /**
+     * Packages that must NEVER become currentPackage: SystemUI (status bar / recents), the app's
+     * own package, and (extensible) Launchers / IMEs. Kept as a field so real-device tweaks are
+     * localized. spec §3.4.
+     */
+    private val systemPackageDenylist: Set<String> = setOf(
+        "com.android.systemui",
+        packageName // own package
+    )
+
+    private val perAppDetector by lazy { PerAppDetector(ownPackage = packageName, denylist = systemPackageDenylist) }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         PhantomLog.d(TAG, "Service connected.")
@@ -55,7 +67,17 @@ class PhantomScrollService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) {
-        // Per-app detection lands in Phase 3. Phase 1 keeps this a no-op.
+        val pkg = event?.packageName?.toString() ?: return
+        val decision = perAppDetector.evaluate(
+            eventPackage = pkg,
+            currentPackage = repository.currentPackage.value,
+            perAppEnabled = repository.perAppEnabled.value,
+            nowMs = System.currentTimeMillis()
+        )
+        if (decision is PerAppDecision.Handle) {
+            repository.setCurrentPackage(decision.packageToSet)
+            PhantomLog.d(TAG, "Per-app: currentPackage → ${decision.packageToSet}")
+        }
     }
 
     override fun onInterrupt() {
