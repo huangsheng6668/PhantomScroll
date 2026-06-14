@@ -371,7 +371,7 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
-        // Outside touch (FLAG_WATCH_OUTSIDE_TOUCH in Expanded state) → collapse.
+        // Outside touch (FLAG_WATCH_OUTSIDE_TOUCH in Expanded state) -> collapse.
         if (ev.actionMasked == MotionEvent.ACTION_OUTSIDE) {
             val flow = panelStateFlow
             if (flow != null && flow.value == PanelState.Expanded) {
@@ -383,27 +383,37 @@ class FloatingOverlayView @JvmOverloads constructor(
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
             return true
         }
-        if (!dragging) return false
         val repo = repository ?: return false
         when (ev.actionMasked) {
             MotionEvent.ACTION_MOVE -> {
-                val w = repo.screenWidth.value
-                val h = repo.screenHeight.value
-                val dx = (ev.rawX - lastRawX).toInt()
-                val dy = (ev.rawY - lastRawY).toInt()
-                // 130dp panel fallback in px; matches repositionToBounds logic.
-                val panelW = panelRoot.width.takeIf { it > 0 }
-                    ?: (130f * resources.displayMetrics.density).toInt()
-                val panelH = panelRoot.height.takeIf { it > 0 }
-                    ?: (200f * resources.displayMetrics.density).toInt()
-                currentX = OverlayGeometry.clamp(currentX + dx, 0, w - panelW)
-                currentY = OverlayGeometry.clamp(currentY + dy, 0, h - panelH)
-                lastRawX = ev.rawX; lastRawY = ev.rawY
-                onUpdatePosition?.invoke(currentX, currentY)
+                if (!dragging) {
+                    if (abs(ev.rawX - downRawX) > touchSlop || abs(ev.rawY - downRawY) > touchSlop) {
+                        dragging = true
+                        lastRawX = ev.rawX
+                        lastRawY = ev.rawY
+                    }
+                }
+                if (dragging) {
+                    val w = repo.screenWidth.value
+                    val h = repo.screenHeight.value
+                    val dx = (ev.rawX - lastRawX).toInt()
+                    val dy = (ev.rawY - lastRawY).toInt()
+                    // 130dp panel fallback in px; matches repositionToBounds logic.
+                    val panelW = panelRoot.width.takeIf { it > 0 }
+                        ?: (130f * resources.displayMetrics.density).toInt()
+                    val panelH = panelRoot.height.takeIf { it > 0 }
+                        ?: (200f * resources.displayMetrics.density).toInt()
+                    currentX = OverlayGeometry.clamp(currentX + dx, 0, w - panelW)
+                    currentY = OverlayGeometry.clamp(currentY + dy, 0, h - panelH)
+                    lastRawX = ev.rawX; lastRawY = ev.rawY
+                    onUpdatePosition?.invoke(currentX, currentY)
+                }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                dragging = false
-                performSnap()
+                if (dragging) {
+                    dragging = false
+                    performSnap()
+                }
             }
         }
         return true
