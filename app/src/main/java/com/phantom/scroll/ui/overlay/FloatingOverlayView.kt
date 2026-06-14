@@ -141,7 +141,7 @@ class FloatingOverlayView @JvmOverloads constructor(
 
         chipNovel.setOnClickListener { scope.launch { repository?.applyPreset(Preset.NOVEL) } }
         chipComic.setOnClickListener { scope.launch { repository?.applyPreset(Preset.COMIC) } }
-        // 自定义 Chip 不可点（它是"未命中预设"的派生态）；点击无效即可。
+        chipCustom.setOnClickListener { scope.launch { repository?.applyCustomPreset() } }
 
         directionButton.setOnClickListener {
             val repo = repository ?: return@setOnClickListener

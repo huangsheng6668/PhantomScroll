@@ -89,6 +89,7 @@ class SettingsRepository(
             _profiles.value = store.loadProfiles()
             _perAppEnabled.value = store.loadPerAppEnabled()
             _stats.value = store.loadStats()
+            lastCustomSettings = _global.value
 
             // Start persistence collectors AFTER the initial load completes.
             // drop(1) filters out the just-loaded values, collecting subsequent mutations only,
@@ -118,18 +119,28 @@ class SettingsRepository(
      *  [updateActive] so it shares the same per-app semantics as Slider edits. */
     suspend fun applyPreset(preset: Preset) { updateActive(preset.settings) }
 
+    private var lastCustomSettings: ScrollSettings = ScrollSettings.DEFAULT
+
     /**
      * Writes [settings] to the active target: the current package's profile when per-app is on
      * and a current package is known (dynamically creating the profile), otherwise the global
      * defaults (spec §3.4 "首次调整自动创建 profile"). Persistence is debounced via collectors.
      */
     suspend fun updateActive(settings: ScrollSettings) {
+        if (PresetRegistry.selectionFor(settings) is PresetSelection.Custom) {
+            lastCustomSettings = settings
+        }
         val pkg = _currentPackage.value
         if (_perAppEnabled.value && pkg != null) {
             upsertProfile(pkg, settings)
         } else {
             _global.value = settings
         }
+    }
+
+    /** Applies the last custom user settings to active target. */
+    suspend fun applyCustomPreset() {
+        updateActive(lastCustomSettings)
     }
 
     /** Forgets the current package's profile so activeSettings falls back to global. No-op if no
