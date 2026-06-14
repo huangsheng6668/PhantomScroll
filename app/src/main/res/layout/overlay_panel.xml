@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/panel_root"
+    android:layout_width="130dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/overlay_card_border"
+    android:padding="6dp">
+
+    <!-- Title row: app name + quick-fold -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:id="@+id/title_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="☽ Phantom"
+            android:textColor="@color/phantom_cyan"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+        <FrameLayout
+            android:id="@+id/fold_button"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:background="@drawable/overlay_fold_bg"
+            android:clickable="true"
+            android:focusable="true">
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="—"
+                android:textColor="@color/text_primary"
+                android:textSize="9sp"
+                android:textStyle="bold" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="4dp" />
+
+    <!-- 速度 (duration) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="速度"
+                android:textColor="@color/text_secondary"
+                android:textSize="9sp" />
+            <TextView
+                android:id="@+id/value_duration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/phantom_cyan"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_duration"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:valueFrom="200.0"
+            android:valueTo="1500.0"
+            android:value="500.0"
+            app:labelBehavior="gone"
+            app:thumbColor="@color/phantom_cyan"
+            app:trackColorActive="@color/phantom_cyan"
+            app:trackColorInactive="@color/text_tertiary" />
+    </LinearLayout>
+
+    <!-- 间隔 (interval) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="间隔"
+                android:textColor="@color/text_secondary"
+                android:textSize="9sp" />
+            <TextView
+                android:id="@+id/value_interval"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/phantom_cyan"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_interval"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:valueFrom="500.0"
+            android:valueTo="10000.0"
+            android:value="2000.0"
+            app:labelBehavior="gone"
+            app:thumbColor="@color/phantom_cyan"
+            app:trackColorActive="@color/phantom_cyan"
+            app:trackColorInactive="@color/text_tertiary" />
+    </LinearLayout>
+
+    <!-- 距离 (distanceRatio) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="距离"
+                android:textColor="@color/text_secondary"
+                android:textSize="9sp" />
+            <TextView
+                android:id="@+id/value_distance"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/phantom_cyan"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_distance"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:valueFrom="0.30"
+            android:valueTo="0.95"
+            android:value="0.75"
+            app:labelBehavior="gone"
+            app:thumbColor="@color/phantom_cyan"
+            app:trackColorActive="@color/phantom_cyan"
+            app:trackColorInactive="@color/text_tertiary" />
+    </LinearLayout>
+
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="4dp" />
+
+    <!-- Play / Pause: MaterialButton handles custom backgroundTint and corner radius natively.
+         insetTop/insetBottom=0dp removes MaterialButton's default 6dp vertical insets
+         so android:layout_height="26dp" yields an actual 26dp button. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/play_button"
+        android:layout_width="match_parent"
+        android:layout_height="26dp"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        android:padding="0dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:text="▶ 开始"
+        android:textColor="@color/text_primary"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        app:cornerRadius="13dp"
+        app:backgroundTint="@color/success_green" />
+</LinearLayout>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Outer 32x64dp touch target (parity: touchTargetWidth/Height). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/handle_root"
+    android:layout_width="32dp"
+    android:layout_height="64dp"
+    android:visibility="gone"
+    android:clickable="true"
+    android:focusable="true">
+    <!-- Inner 8x36dp handle visual, anchored start by default (left edge). -->
+    <FrameLayout
+        android:id="@+id/handle_visual_wrap"
+        android:layout_width="8dp"
+        android:layout_height="36dp"
+        android:layout_gravity="start|center_vertical">
+        <View
+            android:id="@+id/handle_visual"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/overlay_handle_left" />
+        <!-- small white vertical indicator bar (1.5x12dp, 70% alpha) -->
+        <View
+            android:layout_width="1.5dp"
+            android:layout_height="12dp"
+            android:layout_gravity="center"
+            android:background="@color/white_70" />
+    </FrameLayout>
+</FrameLayout>
