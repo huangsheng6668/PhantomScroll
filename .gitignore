@@ -24,5 +24,7 @@ Thumbs.db
 
 # Signing & Tooling
 keystore.properties
+*.jks
+*.keystore
 .codegraph/
 

@@ -88,7 +88,7 @@
 | 3 | 主入口 | `MainActivity` + `MainScreen` | 权限检查引导、使用说明 |
 | 4 | 核心服务 | `PhantomScrollService` | 合并后的无障碍服务及生命周期管理 |
 | 5 | 数据模型 | `data/ScrollSettings.kt` / `SettingsRepository.kt` | 单一真相源及状态仓储服务 |
-| 6 | 手势引擎 | `GestureEngine` | 贝塞尔曲线、Bio-Noise、对象池、采样策略 |
+| 6 | 手势引擎 | `GestureEngine` + `SpeedCurve` | 贝塞尔曲线、Bio-Noise、对象池、采样策略、**双段连续 Stroke 非对称速度曲线、贝塞尔重采样像素抖动、起点随机化** |
 | 7 | 悬浮窗 UI | `FloatingOverlayView` | 原生自定义视图、拖拽吸附状态机、交互保护拦截 |
 | 8 | 通知管理 | `NotificationHelper` | 通知渠道、前台状态通知构建 |
 | 9 | 样式系统 | `res/values/colors.xml` | 暗黑高对比度色值及 Drawable 样式包 |

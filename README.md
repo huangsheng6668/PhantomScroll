@@ -6,10 +6,12 @@
 
 ## 🌟 核心特性
 
-1. **拟人化惯性滑动引擎 (Inertial Gesture Engine)**
-   - **单段触控注入**：采用单段 `StrokeDescription` 进行无缝事件分发，让手指在滑动终点最速阶段以真实惯性初速度释放。完美适配系统 `VelocityTracker`，触发阅读 App 内自然、长距离的物理惯性滚动（Fling）。
-   - **原生硬件级采样 (`Path.quadTo`)**：直接利用原生二阶贝塞尔曲线函数。由 Android 输入系统在触控注入层根据设备的屏幕刷新率（如 90Hz / 120Hz / 144Hz 等）进行原生自适应高频采样，输出极致丝滑的滑动轨迹。
-   - **低频拟人化噪声 (Bio-Noise)**：滑动距离、持续时间以及两次滑动之间的间隔时间，均动态加入 $\pm 5\% \sim \pm 10\%$ 的正态分布随机浮动；对滑动起点、终点和控制点引入低频手抖随机偏置，模拟拇指滑过时的细微差异，避免高频噪声污染速度计算。
+1. **拟人化双段滑动引擎 (Two-Phase Gesture Engine)**
+   - **非对称速度曲线 (Asymmetric Speed Curve)**：单次滑动拆为加速 / 减速两段，通过 `StrokeDescription.continueStroke` 连续注入。加速段（占总时长 25%）急促覆盖 45% 距离（≈1.8× 均速），减速段（占总时长 75%）平缓覆盖剩余 55%（≈0.73× 均速），还原真实手指"快甩出 → 平滑减速"的物理特征。详见 [SpeedCurve.mapTimeToProgress](app/src/main/java/com/phantom/scroll/gesture/SpeedCurve.kt)。
+   - **贝塞尔重采样 + 像素级抖动**：将二阶贝塞尔曲线 `B(t)=(1-t)²P₀+2t(1-t)P₁+t²P₂` 重采样为 40 个折线点，每个内部采样点叠加 ±2σ 高斯抖动，破坏单段 `quadTo` 的几何完美感；端点保持不抖动确保落点精确。
+   - **起点随机化**：滑动起点不再固定在屏幕边缘，而是在安全区剩余空间内随机分布，避免呆板的重复起手轨迹；同时根治了高 `distanceRatio` 下旧实现被 `coerceAtLeast` 截断导致实际距离不足的问题。
+   - **兼容性自动降级**：部分国产 ROM 对连续 stroke 注入有差异。运行期监测连续取消次数，达到阈值自动切换回单段路径（仍保留采样抖动与起点随机化），并 Toast 提示用户，全程无感保活。
+   - **低频拟人化噪声 (Bio-Noise)**：滑动距离（±8%）、持续时间（±7%）以及两次滑动之间的间隔时间（±8%），均动态加入正态分布随机浮动；间隔 clamp 已对齐 Slider 的 `500..10000`ms 区间，杜绝越界。
 
 2. **微服务化单进程架构与极限性能优化**
    - **移除前台服务依赖**：完全停用 `startForeground()`，改用常规状态通知，免去了 Google Play 应用商店前台服务数据同步权限的严格红线审查。
@@ -61,14 +63,16 @@ app/src/main/java/com/phantom/scroll/
 │   ├── ProfileStore.kt          #   持久化接口
 │   └── DataStoreProfileStore.kt #   DataStore 实现 + SharedPreferencesMigration
 │
-├── gesture/GestureEngine.kt     # 贝塞尔 + Bio-Noise + 方向（UP/DOWN）+ 零 GC Path 复用
+├── gesture/
+│   ├── GestureEngine.kt     # 贝塞尔 + Bio-Noise + 方向（UP/DOWN）+ 起点随机化 + 双段路径 + 零 GC Path 复用
+│   └── SpeedCurve.kt        # 纯 JVM：ease-out 缓动 / 非对称速度曲线映射 / 贝塞尔重采样抖动
 │
 ├── notification/NotificationHelper.kt  # 状态通知通道 + 通知 action 广播
 │
 ├── service/
 │   ├── PhantomScrollService.kt          # 单一 AccessibilityService，含 per-app 检测
 │   ├── FloatingWindowController.kt      # WindowManager 编排原生悬浮窗
-│   ├── ScrollOrchestrator.kt            # 滑动循环 + 统计累计 + 失败策略
+│   ├── ScrollOrchestrator.kt            # 滑动循环 + 双段 stroke 注入 + 兼容性自动降级 + 统计累计 + 失败策略
 │   ├── ServiceEventReceiver.kt          # 屏幕状态 / 通知 action 广播
 │   ├── FailurePolicy.kt                 # 纯逻辑：失败计数 / 自动暂停（可单测）
 │   ├── ScreenStateCoordinator.kt        # 纯逻辑：锁屏暂停 / 亮屏恢复（可单测）
@@ -89,9 +93,9 @@ baselineprofile/                         # 【V2 Phase 4】Baseline Profile 生�
     ├── BaselineProfileGenerator.kt      # 生成 MainActivity 冷启动 profile
     └── StartupBenchmark.kt              # Macrobenchmark：Profile 前/后冷启动对比
 
-app/src/test/java/com/phantom/scroll/    # 纯逻辑 JVM 单元测试（58 个，无 Robolectric）
+app/src/test/java/com/phantom/scroll/    # 纯逻辑 JVM 单元测试（76 个，无 Robolectric）
 ├── data/       (SettingsRepository / ScrollSettings / MigrationMapper / ProfileKeyParsing)
-├── gesture/    (GestureEngine 含方向)
+├── gesture/    (GestureEngine 含方向/起点随机/X收敛/距离完整性 + SpeedCurve 缓动/采样)
 ├── service/    (FailurePolicy / ScreenStateCoordinator / PerAppDetector)
 └── ui/overlay/ (OverlayGeometry)
 ```
@@ -112,14 +116,21 @@ V2 对项目做了第二轮架构与性能优化，分四个阶段推进（每�
 ## 🚀 核心算法与重构细节
 
 ### 1. 数学计算与 Path 绘图解耦
-为了让手势生成算法可以脱离真实的 Android 虚拟机进行单元测试，我们从 [GestureEngine.kt](file:///E:/github_project/PhantomScroll/app/src/main/java/com/phantom/scroll/gesture/GestureEngine.kt) 中剥离了 `GesturePoints` 纯 Kotlin 数据类。贝塞尔曲线、屏幕安全区偏移、和仿生随机噪声全部在纯 JVM 函数 `calculateGesturePoints` 中进行，排除了 `android.graphics.Path` 依赖，实现了 100% 的本地 JVM 单元测试覆盖率。
+为了让手势生成算法可以脱离真实的 Android 虚拟机进行单元测试，我们从 [GestureEngine.kt](file:///E:/github_project/PhantomScroll/app/src/main/java/com/phantom/scroll/gesture/GestureEngine.kt) 中剥离了 `GesturePoints` 纯 Kotlin 数据类。贝塞尔曲线、屏幕安全区偏移、起点随机化、和仿生随机噪声全部在纯 JVM 函数 `calculateGesturePoints` 中进行，排除了 `android.graphics.Path` 依赖，实现了 100% 的本地 JVM 单元测试覆盖率。
 
-### 2. Android 15 (SDK 35) Edge-to-Edge 适配
+### 2. 双段连续 Stroke 与非对称速度曲线
+Android `dispatchGesture` 在**单个 stroke 内部按弧长匀速**插值，无法直接变速。为此：
+- 将二阶贝塞尔曲线按加速 / 减速比例重采样为两段折线点（[SpeedCurve.sampleBezier](file:///E:/github_project/PhantomScroll/app/src/main/java/com/phantom/scroll/gesture/SpeedCurve.kt)），每段叠加独立的高斯像素抖动，端点不抖以保证拼接平滑。
+- 在 [ScrollOrchestrator](file:///E:/github_project/PhantomScroll/app/src/main/java/com/phantom/scroll/service/ScrollOrchestrator.kt) 中用 `StrokeDescription(path, 0, dur, willContinue=true)` + `continueStroke(...)` 注入为**一次连续手势**，加速段时长短、减速段时长长，从而实现"急加速 / 缓减速"。
+- 该 `continueStroke` API 自 API 26（项目 minSdk）可用，无需版本分支。
+- **兼容性兜底**：连续 stroke 在极少数 ROM 上可能异常取消。运行期统计连续取消次数，达 2 次即自动切回 `generateSinglePath` 单段路径（仍保留抖动与起点随机化），Toast 提示用户，且不计入失败策略，给降级路径公平重试机会。
+
+### 3. Android 15 (SDK 35) Edge-to-Edge 适配
 Android 15 强制启用了沉浸式 Edge-to-Edge 视效。为此：
 - 我们移除了 [Theme.kt](file:///E:/github_project/PhantomScroll/app/src/main/java/com/phantom/scroll/ui/theme/Theme.kt) 中已失效且被标为废弃的 `window?.statusBarColor = ...` 属性。
 - 修改了 [MainScreen.kt](file:///E:/github_project/PhantomScroll/app/src/main/java/com/phantom/scroll/ui/screen/MainScreen.kt) 的 Modifier padding 应用顺序（先填充全屏 `background`，再加入 `statusBarsPadding()` 和 `navigationBarsPadding()`），确保系统栏被背景色完美填充，解决了系统栏白色条带的视觉 Jank。
 
-### 3. 全局日志门控 (PhantomLog)
+### 4. 全局日志门控 (PhantomLog)
 项目引入了自定义日志工具 [PhantomLog](file:///E:/github_project/PhantomScroll/app/src/main/java/com/phantom/scroll/util/PhantomLog.kt)。它在编译期通过 `BuildConfig.DEBUG` 门控：
 - 在 `debug` 构建中输出完整的调试日志。
 - 在 `release` 混淆构建中直接通过编译器优化机制将所有 `d` 和 `w` 日志行直接擦除（0 GC，0 字符串拼接开销），并保证仅输出 critical 异常级别的错误日志。
@@ -133,8 +144,9 @@ Android 15 强制启用了沉浸式 Edge-to-Edge 视效。为此：
 ```bash
 ./gradlew test
 ```
-该命令会测试 **58 个纯逻辑 JVM 单元测试**（无 Robolectric），覆盖：
-- **`GestureEngineTest`**：滑动点落在合法屏幕安全区；极短/极长时间正确 Coerce 进 `[150,1500]`ms；Bio-Noise 抖动差异性；**UP/DOWN 方向翻转**（endY 与 startY 相对关系）。
+该命令会测试 **76 个纯逻辑 JVM 单元测试**（无 Robolectric），覆盖：
+- **`GestureEngineTest`**：滑动点落在合法屏幕安全区；极短/极长时间正确 Coerce 进 `[150,1500]`ms；Bio-Noise 抖动差异性；**UP/DOWN 方向翻转**及距离镜像；**起点 Y 随机化**；**endX 贴近 startX**（横向漂移收敛）；**高 distanceRatio 下完整距离不截断**；**加速/减速比例非对称**。
+- **`SpeedCurveTest`**：ease-out-cubic 端点与单调性；时间→进度映射在加速边界命中 `accelDistanceRatio` 且加速段速度严格大于减速段；贝塞尔重采样点数与端点保持；jitter 零抖动时落在解析曲线上、有抖动时约束在 ±2σ 内。
 - **`SettingsRepositoryTest`**：activeSettings 回落/切换、profile 增删、stats 累加/重置、`applyPreset`/`updateActive`/`forgetActiveProfile`/`selectedPreset` 派生。
 - **`PresetRegistryTest`**：global 命中小说/漫画预设或回落自定义。
 - **`PerAppDetectorTest`**：denylist / 去重 / 自身包名过滤 / 300ms 防抖。

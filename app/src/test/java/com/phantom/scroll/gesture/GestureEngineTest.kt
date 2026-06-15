@@ -138,4 +138,96 @@ class GestureEngineTest {
             points.startY < screenHeight * 0.5f)
         assertTrue("DOWN: endY (${points.endY}) must be below startY (${points.startY})", points.endY > points.startY)
     }
+
+    // ------------------------------------------------------------------
+    // New humanization tests: randomized start Y, X drift convergence,
+    // asymmetric speed-curve ratios, and full-distance-within-safe-zone.
+    // ------------------------------------------------------------------
+
+    @Test
+    fun startY_varies_across_samples() {
+        // The start point must not be pinned to an edge; repeated generation should
+        // yield visibly different Y positions thanks to the slack-based randomization.
+        val random = Random()
+        val startYs = List(20) {
+            GestureEngine.calculateGesturePoints(
+                screenWidth = 1080, screenHeight = 2400,
+                distanceRatio = 0.5f, durationMs = 500L,
+                random = random, direction = ScrollDirection.UP
+            ).startY
+        }.toSet()
+        assertTrue("startY should vary across samples (got ${startYs.size} unique values)", startYs.size > 5)
+    }
+
+    @Test
+    fun endX_stays_near_startX() {
+        // Real fingers barely drift horizontally during a vertical swipe. The end X
+        // must stay close to the start X (within a few percent of screen width).
+        val random = Random()
+        repeat(50) {
+            val pts = GestureEngine.calculateGesturePoints(
+                screenWidth = 1080, screenHeight = 2400,
+                distanceRatio = 0.6f, durationMs = 400L,
+                random = random, direction = ScrollDirection.UP
+            )
+            val drift = Math.abs(pts.endX - pts.startX)
+            assertTrue("Horizontal drift ($drift) exceeds 5% of screen width", drift < 1080 * 0.05f)
+        }
+    }
+
+    @Test
+    fun full_distance_fits_within_safe_zone_at_high_ratio() {
+        // Regression guard: with distanceRatio near the slider max, the full noisy
+        // distance must still fit between safeTop and safeBottom (no truncation).
+        val safeTop = 2400 * 0.15f
+        val safeBottom = 2400 * 0.85f
+        val random = Random()
+        repeat(50) {
+            val pts = GestureEngine.calculateGesturePoints(
+                screenWidth = 1080, screenHeight = 2400,
+                distanceRatio = 0.95f, durationMs = 500L,
+                random = random, direction = ScrollDirection.UP
+            )
+            val travelled = Math.abs(pts.startY - pts.endY)
+            assertTrue("startY (${pts.startY}) out of safe zone", pts.startY in safeTop..safeBottom)
+            assertTrue("endY (${pts.endY}) out of safe zone", pts.endY in safeTop..safeBottom)
+            // Travelled distance must stay close to the requested ratio even after the
+            // ±8% bio-noise (clamped at ±2σ ≈ ±16%). At ratio 0.95 the floor is
+            // 0.95 × 0.84 ≈ 0.798, so require ≥ 0.75 of safe height to leave headroom.
+            assertTrue("Travelled distance ($travelled) too short for ratio 0.95",
+                travelled >= (safeBottom - safeTop) * 0.75f)
+        }
+    }
+
+    @Test
+    fun speed_curve_ratios_are_asymmetric() {
+        // The acceleration phase must cover more distance than time it consumes,
+        // i.e. accelDistanceRatio > accelDurationRatio, so the phase is genuinely "fast".
+        val pts = GestureEngine.calculateGesturePoints(
+            screenWidth = 1080, screenHeight = 2400,
+            distanceRatio = 0.5f, durationMs = 500L,
+            random = Random(0), direction = ScrollDirection.UP
+        )
+        assertTrue(
+            "accelDistanceRatio (${pts.accelDistanceRatio}) must exceed accelDurationRatio (${pts.accelDurationRatio})",
+            pts.accelDistanceRatio > pts.accelDurationRatio
+        )
+        assertTrue("accelDurationRatio must be in (0,1)", pts.accelDurationRatio in 0f..1f)
+        assertTrue("accelDistanceRatio must be in (0,1)", pts.accelDistanceRatio in 0f..1f)
+    }
+
+    @Test
+    fun direction_down_mirrors_up_correctly() {
+        // UP and DOWN with the same seed must travel the same absolute distance and
+        // share the same control-point Y midpoint — i.e. a true vertical mirror.
+        val w = 1080
+        val h = 2400
+        val up = GestureEngine.calculateGesturePoints(w, h, 0.6f, 500L, Random(99), ScrollDirection.UP)
+        val down = GestureEngine.calculateGesturePoints(w, h, 0.6f, 500L, Random(99), ScrollDirection.DOWN)
+        val upTravel = Math.abs(up.startY - up.endY)
+        val downTravel = Math.abs(down.startY - down.endY)
+        assertEquals("UP and DOWN must travel the same distance", upTravel, downTravel, 1.0f)
+        assertTrue("UP endY must be above startY", up.endY < up.startY)
+        assertTrue("DOWN endY must be below startY", down.endY > down.startY)
+    }
 }
