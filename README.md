@@ -89,7 +89,7 @@ baselineprofile/                         # 【V2 Phase 4】Baseline Profile 生�
     ├── BaselineProfileGenerator.kt      # 生成 MainActivity 冷启动 profile
     └── StartupBenchmark.kt              # Macrobenchmark：Profile 前/后冷启动对比
 
-app/src/test/java/com/phantom/scroll/    # 纯逻辑 JVM 单元测试（56 个，无 Robolectric）
+app/src/test/java/com/phantom/scroll/    # 纯逻辑 JVM 单元测试（58 个，无 Robolectric）
 ├── data/       (SettingsRepository / ScrollSettings / MigrationMapper / ProfileKeyParsing)
 ├── gesture/    (GestureEngine 含方向)
 ├── service/    (FailurePolicy / ScreenStateCoordinator / PerAppDetector)
@@ -133,8 +133,8 @@ Android 15 强制启用了沉浸式 Edge-to-Edge 视效。为此：
 ```bash
 ./gradlew test
 ```
-该命令会测试 **56 个纯逻辑 JVM 单元测试**（无 Robolectric），覆盖：
-- **`GestureEngineTest`**：滑动点落在合法屏幕安全区；极短/极长时间正确 Coerce 进 `[200,1500]`ms；Bio-Noise 抖动差异性；**UP/DOWN 方向翻转**（endY 与 startY 相对关系）。
+该命令会测试 **58 个纯逻辑 JVM 单元测试**（无 Robolectric），覆盖：
+- **`GestureEngineTest`**：滑动点落在合法屏幕安全区；极短/极长时间正确 Coerce 进 `[150,1500]`ms；Bio-Noise 抖动差异性；**UP/DOWN 方向翻转**（endY 与 startY 相对关系）。
 - **`SettingsRepositoryTest`**：activeSettings 回落/切换、profile 增删、stats 累加/重置、`applyPreset`/`updateActive`/`forgetActiveProfile`/`selectedPreset` 派生。
 - **`PresetRegistryTest`**：global 命中小说/漫画预设或回落自定义。
 - **`PerAppDetectorTest`**：denylist / 去重 / 自身包名过滤 / 300ms 防抖。
