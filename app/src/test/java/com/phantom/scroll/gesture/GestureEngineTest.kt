@@ -59,7 +59,7 @@ class GestureEngineTest {
             durationMs = 50L,
             random = random
         )
-        assertEquals("Short duration should be coerced to 200ms", 200L, pointsShort.duration)
+        assertEquals("Short duration should be coerced to 150ms", 150L, pointsShort.duration)
 
         // Test very long duration
         val pointsLong = GestureEngine.calculateGesturePoints(

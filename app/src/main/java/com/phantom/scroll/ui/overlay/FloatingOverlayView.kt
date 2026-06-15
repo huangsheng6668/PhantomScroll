@@ -238,18 +238,14 @@ class FloatingOverlayView @JvmOverloads constructor(
             PanelState.Collapsed -> {
                 handleRoot.visibility = VISIBLE
                 panelRoot.visibility = GONE
-                if (!isLeftEdge) {
-                    currentX = screenWidth - handleWidthPx
-                    onUpdatePosition?.invoke(currentX, currentY)
-                }
+                currentX = if (isLeftEdge) 0 else screenWidth - handleWidthPx
+                onUpdatePosition?.invoke(currentX, currentY)
             }
             PanelState.Expanded -> {
                 panelRoot.visibility = VISIBLE
                 handleRoot.visibility = GONE
-                if (!isLeftEdge) {
-                    currentX = screenWidth - panelWidthPx
-                    onUpdatePosition?.invoke(currentX, currentY)
-                }
+                currentX = if (isLeftEdge) 0 else screenWidth - panelWidthPx
+                onUpdatePosition?.invoke(currentX, currentY)
             }
             PanelState.Snapping -> {
                 panelRoot.visibility = VISIBLE
@@ -347,7 +343,11 @@ class FloatingOverlayView @JvmOverloads constructor(
         }
         val panelH = panelRoot.height.takeIf { it > 0 }
             ?: (200f * resources.displayMetrics.density).toInt()
-        val nx = OverlayGeometry.clamp(currentX, 0, (screenWidth - widthPx).coerceAtLeast(0))
+        val nx = if (!dragging) {
+            OverlayGeometry.edgeX(isLeftEdge, screenWidth, widthPx)
+        } else {
+            OverlayGeometry.clamp(currentX, 0, (screenWidth - widthPx).coerceAtLeast(0))
+        }
         val ny = OverlayGeometry.clamp(currentY, 0, (screenHeight - panelH).coerceAtLeast(0))
         if (nx != currentX || ny != currentY) {
             currentX = nx

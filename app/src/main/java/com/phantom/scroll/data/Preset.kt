@@ -13,12 +13,12 @@ data class Preset(
         /** 小说：长间隔、短距离，适合文字连续阅读。 */
         val NOVEL = Preset(
             name = "小说",
-            settings = ScrollSettings(duration = 400L, interval = 2300L, distanceRatio = 0.45f, direction = ScrollDirection.UP)
+            settings = ScrollSettings(duration = 220L, interval = 2300L, distanceRatio = 0.45f, direction = ScrollDirection.UP)
         )
         /** 漫画：中间隔、大距离，一屏一翻。 */
         val COMIC = Preset(
             name = "漫画",
-            settings = ScrollSettings(duration = 400L, interval = 1500L, distanceRatio = 0.55f, direction = ScrollDirection.UP)
+            settings = ScrollSettings(duration = 220L, interval = 1500L, distanceRatio = 0.55f, direction = ScrollDirection.UP)
         )
         /** All fixed built-ins, in display order. */
         val BUILT_INS: List<Preset> = listOf(NOVEL, COMIC)

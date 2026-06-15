@@ -1,7 +1,9 @@
 package com.phantom.scroll.service
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Context
 import android.content.res.Configuration
+import android.view.WindowManager
 import android.widget.Toast
 import com.phantom.scroll.data.DataStoreProfileStore
 import com.phantom.scroll.data.SettingsRepository
@@ -49,9 +51,7 @@ class PhantomScrollService : AccessibilityService() {
         PhantomLog.d(TAG, "Service connected.")
         Toast.makeText(this, "👻 PhantomScroll 自动翻页服务已连接", Toast.LENGTH_SHORT).show()
 
-        val dm = resources.displayMetrics
-        repository.setScreenWidth(dm.widthPixels)
-        repository.setScreenHeight(dm.heightPixels)
+        updateScreenDimensions()
 
         floatingWindowController = FloatingWindowController(this, repository, serviceScope, panelStateFlow)
         scrollOrchestrator = ScrollOrchestrator(this, repository, serviceScope)
@@ -88,10 +88,23 @@ class PhantomScrollService : AccessibilityService() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        val dm = resources.displayMetrics
-        repository.setScreenWidth(dm.widthPixels)
-        repository.setScreenHeight(dm.heightPixels)
-        PhantomLog.d(TAG, "onConfigurationChanged: ${dm.widthPixels}x${dm.heightPixels}")
+        updateScreenDimensions()
+    }
+
+    private fun updateScreenDimensions() {
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            val metrics = wm.currentWindowMetrics
+            val bounds = metrics.bounds
+            repository.setScreenWidth(bounds.width())
+            repository.setScreenHeight(bounds.height())
+            PhantomLog.d(TAG, "updateScreenDimensions (API 30+): ${bounds.width()}x${bounds.height()}")
+        } else {
+            val dm = resources.displayMetrics
+            repository.setScreenWidth(dm.widthPixels)
+            repository.setScreenHeight(dm.heightPixels)
+            PhantomLog.d(TAG, "updateScreenDimensions: ${dm.widthPixels}x${dm.heightPixels}")
+        }
     }
 
     override fun onDestroy() {

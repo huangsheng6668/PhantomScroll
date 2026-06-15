@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="dark_background">#FF0F0F12</color>
+
     <color name="dark_surface">#FF1E1E24</color>
     <color name="dark_surface_translucent">#CC121216</color>
     <color name="phantom_cyan">#FF00E5FF</color>
@@ -10,7 +10,7 @@
     <color name="text_secondary">#FF8E8E93</color>
     <color name="text_tertiary">#FF48484A</color>
     <color name="success_green">#FF30D158</color>
-    <color name="warning_orange">#FFFF9F0A</color>
+
     <color name="error_red">#FFFF453A</color>
     <!-- derived alphas used by handle gradient + fold button (parity with Compose) -->
     <color name="phantom_cyan_80">#CC00E5FF</color>

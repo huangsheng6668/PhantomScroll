@@ -95,7 +95,7 @@ class FloatingWindowController(
                         WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
                 PixelFormat.TRANSLUCENT
             ).apply {
-                gravity = Gravity.TOP or Gravity.LEFT
+                gravity = Gravity.TOP or Gravity.START
                 x = 0
                 y = 200
             }

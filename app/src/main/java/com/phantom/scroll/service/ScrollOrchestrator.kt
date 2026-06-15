@@ -32,9 +32,8 @@ class ScrollOrchestrator(
                     repository.isRunning.first { it }
                     if (!repository.isRunning.value) continue
 
-                    val dm = service.resources.displayMetrics
-                    val screenWidth = dm.widthPixels
-                    val screenHeight = dm.heightPixels
+                    val screenWidth = repository.screenWidth.value
+                    val screenHeight = repository.screenHeight.value
                     val settings = repository.activeSettings.value
 
                     val gestureResult = withContext(Dispatchers.Default) {

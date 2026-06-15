@@ -4,7 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.Build
+import androidx.core.content.ContextCompat
 import com.phantom.scroll.data.SettingsRepository
 import com.phantom.scroll.notification.NotificationHelper
 import com.phantom.scroll.util.PhantomLog
@@ -58,21 +58,23 @@ class ServiceEventReceiver(
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(screenReceiver, screenFilter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            context.registerReceiver(screenReceiver, screenFilter)
-        }
+        ContextCompat.registerReceiver(
+            context,
+            screenReceiver,
+            screenFilter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         val notificationFilter = IntentFilter().apply {
             addAction(NotificationHelper.ACTION_TOGGLE)
             addAction(NotificationHelper.ACTION_STOP)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(notificationActionReceiver, notificationFilter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            context.registerReceiver(notificationActionReceiver, notificationFilter)
-        }
+        ContextCompat.registerReceiver(
+            context,
+            notificationActionReceiver,
+            notificationFilter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     fun stop() {

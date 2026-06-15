@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.phantom.scroll.MainActivity
 import com.phantom.scroll.R
@@ -20,20 +19,16 @@ object NotificationHelper {
     const val ACTION_STOP = "com.phantom.scroll.ACTION_STOP"
 
     fun createChannel(context: Context) {
-        // NotificationChannel is required on Android 8.0+ (API 26+)
-        // Our minSdk is 26, so the version check is always true but kept for clarity
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val name = "PhantomScroll 服务"
-            val descriptionText = "PhantomScroll 自动滑动的状态通知"
-            val importance = NotificationManager.IMPORTANCE_LOW
-            val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
-                description = descriptionText
-                setShowBadge(false)
-            }
-            val notificationManager =
-                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+        val name = "PhantomScroll 服务"
+        val descriptionText = "PhantomScroll 自动滑动的状态通知"
+        val importance = NotificationManager.IMPORTANCE_LOW
+        val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
+            description = descriptionText
+            setShowBadge(false)
         }
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.createNotificationChannel(channel)
     }
 
     fun showNotification(context: Context, isRunning: Boolean) {

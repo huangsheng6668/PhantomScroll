@@ -108,7 +108,7 @@ class GestureEngine {
 
             // 6. Duration with Bio-Noise (±7%)
             val actualDuration = addNoise(durationMs.toFloat(), 0.07f)
-                .toLong().coerceIn(200, 1500)
+                .toLong().coerceIn(150, 1500)
 
             return GesturePoints(startX, startY, controlX, controlY, endX, endY, actualDuration)
         }

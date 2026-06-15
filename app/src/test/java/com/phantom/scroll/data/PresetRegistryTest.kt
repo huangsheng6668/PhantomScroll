@@ -25,13 +25,13 @@ class PresetRegistryTest {
 
     @Test
     fun builtin_presets_have_documented_values() {
-        // spec §3.1: 小说 duration 400 / interval 2300 / ratio 0.45 / UP
-        assertEquals(400L, Preset.NOVEL.settings.duration)
+        // spec §3.1: 小说 duration 220 / interval 2300 / ratio 0.45 / UP
+        assertEquals(220L, Preset.NOVEL.settings.duration)
         assertEquals(2300L, Preset.NOVEL.settings.interval)
         assertEquals(0.45f, Preset.NOVEL.settings.distanceRatio)
         assertEquals(ScrollDirection.UP, Preset.NOVEL.settings.direction)
-        // spec §3.1: 漫画 duration 400 / interval 1500 / ratio 0.55 / UP
-        assertEquals(400L, Preset.COMIC.settings.duration)
+        // spec §3.1: 漫画 duration 220 / interval 1500 / ratio 0.55 / UP
+        assertEquals(220L, Preset.COMIC.settings.duration)
         assertEquals(1500L, Preset.COMIC.settings.interval)
         assertEquals(0.55f, Preset.COMIC.settings.distanceRatio)
         assertEquals(ScrollDirection.UP, Preset.COMIC.settings.direction)
