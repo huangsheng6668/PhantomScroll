@@ -24,7 +24,8 @@
    - 使用系统 `WindowManager` 动态注入全局悬浮窗，**主界面用 Jetpack Compose；悬浮窗用原生 View + Material Components**（V2 Phase 2 起，阅读期不再常驻 Compose 运行时，内存更低）。
    - **命令式刷新**：`FloatingOverlayView` 收集 `SettingsRepository` 的 `StateFlow` 并命令式刷新 View，无重组开销。
    - **吸附状态机 (State Machine)**：支持 `Expanded`（展开面板）、`Snapping`（吸附中动画）、`Collapsed`（边缘折叠手柄）三种状态。
-   - **智能边缘靠吸**：拖拽结束时自动计算 X 坐标，平滑吸附至屏幕最近的一侧边缘，并自动折叠为半透明功能手柄。
+   - **智能边缘靠吸与全屏贴合**：拖拽结束时自动计算 X 坐标，平滑吸附至屏幕最近的一侧边缘，并自动折叠为半透明功能手柄。
+   - **全屏/刘海屏完美贴边**：采用 `FLAG_LAYOUT_IN_SCREEN` 并配置 `layoutInDisplayCutoutMode = LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES`。保证在隐藏系统状态栏和导航栏的全屏小说/漫画阅读场景下，悬浮窗隐藏在左侧时依然能无缝贴合在屏幕物理最左边缘；同时在折叠与展开切换时动态维护这些 LayoutParams 标志防丢失。
 
 4. **安全保护与生命周期保活**
    - **高安全广播**：屏幕状态和通知栏控制广播通过 `RECEIVER_NOT_EXPORTED` 注册，从底层封锁外部恶意 app 伪造广播非法控制服务的漏洞。

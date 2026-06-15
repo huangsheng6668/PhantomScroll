@@ -2,6 +2,7 @@ package com.phantom.scroll.service
 
 import android.content.Context
 import android.graphics.PixelFormat
+import android.os.Build
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
@@ -92,12 +93,16 @@ class FloatingWindowController(
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
                 x = 0
                 y = 200
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
             }
             floatingParams = params
 
@@ -136,12 +141,12 @@ class FloatingWindowController(
     private fun updateLayoutParamsForState(state: PanelState) {
         val view = floatingView ?: return
         val params = floatingParams ?: return
-        val targetFlags = if (state == PanelState.Expanded) {
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        var targetFlags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        if (state == PanelState.Expanded) {
+            targetFlags = targetFlags or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                     WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
-        } else {
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
         }
         if (params.flags != targetFlags) {
             params.flags = targetFlags

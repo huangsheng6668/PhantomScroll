@@ -21,7 +21,7 @@
 
 ## 1. 悬浮窗设计与边缘吸附状态机 (WindowManager & Native Overlay)
 
-- **悬浮窗构建**：使用系统 `WindowManager` 动态添加全局悬浮窗，`LayoutParams` 必须正确配置 `TYPE_APPLICATION_OVERLAY`、`FLAG_NOT_FOCUSABLE` 以及 `LayoutParams.gravity = Gravity.TOP or Gravity.LEFT`。
+- **悬浮窗构建**：使用系统 `WindowManager` 动态添加全局悬浮窗，`LayoutParams` 必须正确配置 `TYPE_APPLICATION_OVERLAY`、`FLAG_NOT_FOCUSABLE`、`FLAG_LAYOUT_IN_SCREEN` 并设置刘海屏适配（如 `layoutInDisplayCutoutMode = LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES`），且 `LayoutParams.gravity = Gravity.TOP or Gravity.LEFT`。同时需在状态机切换（Expanded/Collapsed）更新标志时，保留 `FLAG_LAYOUT_IN_SCREEN` 以确保全屏模式下边缘贴合和正常隐藏。
 - **UI 框架分工**：主界面权限引导页采用 Jetpack Compose 构建；悬浮窗控制面板全面重写为**原生 View (XML 布局 + Material Components)**，彻底移除阅读期间常驻的 Compose 运行时以节省内存。
 - **拖拽与状态机**：利用自定义 View 的 `onTouchEvent` 与 `onInterceptTouchEvent` 拦截与监听用户拖拽。悬浮窗内部维护一个状态机（State）：`Expanded`（展开面板）、`Snapping`（吸附中动画）、`Collapsed`（边缘折叠手柄）。
 - **边缘吸附与折叠动画**：
