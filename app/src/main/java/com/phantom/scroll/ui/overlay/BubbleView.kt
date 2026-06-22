@@ -1,8 +1,11 @@
 package com.phantom.scroll.ui.overlay
 
 import android.content.Context
+import android.graphics.Outline
 import android.util.AttributeSet
 import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.TextView
 import com.phantom.scroll.R
@@ -10,6 +13,9 @@ import com.phantom.scroll.R
 /**
  * Collapsed overlay bubble: 56dp circle + live count badge. Imperative refresh only;
  * [setCount] short-circuits identical text to avoid layout passes at ~0.6 swipe/sec.
+ *
+ * Carries an elevation shadow (the redesign mockup's box-shadow) so the white circle stays
+ * visible against light app backgrounds — without it a white bubble vanishes on white pages.
  */
 class BubbleView @JvmOverloads constructor(
     context: Context,
@@ -22,6 +28,13 @@ class BubbleView @JvmOverloads constructor(
     init {
         LayoutInflater.from(context).inflate(R.layout.overlay_bubble, this, true)
         countView = findViewById(R.id.bubble_count)
+        // Circular outline + elevation → drop shadow that pops the bubble off any background.
+        outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) {
+                outline.setOval(0, 0, view.width, view.height)
+            }
+        }
+        elevation = 6f * resources.displayMetrics.density
     }
 
     /** Renders [count] via [BadgeFormatter]; skips setText when unchanged. */

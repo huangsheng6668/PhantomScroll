@@ -102,7 +102,10 @@ class FloatingOverlayView @JvmOverloads constructor(
     init {
         inflate(context, R.layout.overlay_panel, this)
         // BubbleView inflates overlay_bubble.xml itself; just add one (avoids duplicate bubble_root IDs).
+        // Starts GONE — applyState(Collapsed) makes it visible. The inner bubble_root is always
+        // visible (its content), so only this outer wrapper's visibility needs toggling.
         bubble = BubbleView(context).also {
+            it.visibility = GONE
             addView(it, LayoutParams(collapsedWidthPx(), collapsedWidthPx()))
         }
 
@@ -403,8 +406,10 @@ class FloatingOverlayView @JvmOverloads constructor(
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
         if (ev.actionMasked == MotionEvent.ACTION_OUTSIDE) {
-            // settings open → close settings first (don't collapse whole panel)
-            if (settingsVisible) { toggleSettings(); return true }
+            // Tap outside the panel → auto-hide to the bubble (gets the overlay out of the way
+            // while reading). Tapping the bubble re-expands. Closes an open settings sub-panel
+            // first so re-expand shows the main panel.
+            if (settingsVisible) toggleSettings()
             val flow = panelStateFlow
             if (flow != null && flow.value == PanelState.Expanded) flow.value = PanelState.Collapsed
             return true
