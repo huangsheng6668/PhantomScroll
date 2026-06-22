@@ -131,6 +131,7 @@ class FloatingOverlayView @JvmOverloads constructor(
         configureCells()
 
         foldButton.setOnClickListener { panelStateFlow?.value = PanelState.Collapsed }
+        bubble.setOnClickListener { panelStateFlow?.value = PanelState.Expanded }
         settingsButton.setOnClickListener { toggleSettings() }
         toggleBtn.setOnClickListener { repository?.toggleRunning() }
         resetBtn.setOnClickListener {
