@@ -17,4 +17,19 @@
     <color name="phantom_blue_50">#802979FF</color>
     <color name="white_70">#B3FFFFFF</color>
     <color name="white_10">#1AFFFFFF</color>
+
+    <!-- ===== Overlay redesign (light/green) ===== -->
+    <color name="overlay_surface">#FFFFFFFF</color>
+    <color name="overlay_surface_2">#FFF4F4F6</color>
+    <color name="overlay_fg">#FF2A2A33</color>
+    <color name="overlay_muted">#FF6E6E76</color>
+    <color name="overlay_subtle">#FF888892</color>
+    <color name="overlay_border">#FFE1E1E6</color>
+    <color name="overlay_border_2">#FFECECEF</color>
+    <color name="overlay_accent">#FF1E9E55</color>
+    <color name="overlay_accent_2">#FF3FB373</color>
+    <color name="overlay_accent_soft">#FFE8F5EC</color>
+    <color name="overlay_warning">#FFD98324</color>
+    <color name="overlay_warning_soft">#FFFBEFD9</color>
+    <color name="overlay_on_accent">#FFFFFFFF</color>
 </resources>

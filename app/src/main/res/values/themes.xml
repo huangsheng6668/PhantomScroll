@@ -10,10 +10,11 @@
 
     <!-- Material3 theme used ONLY to inflate the native overlay (Slider requires a Material theme).
          The app's main theme stays Theme.AppCompat.NoActionBar. -->
-    <style name="Theme.PhantomScroll.Overlay" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="colorPrimary">@color/phantom_blue</item>
-        <item name="colorOnPrimary">@color/text_primary</item>
-        <item name="colorPrimaryContainer">@color/dark_surface</item>
+    <style name="Theme.PhantomScroll.Overlay" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">@color/overlay_accent</item>
+        <item name="colorOnPrimary">@color/overlay_on_accent</item>
+        <item name="colorPrimaryContainer">@color/overlay_accent_soft</item>
+        <item name="android:colorBackground">@color/overlay_surface</item>
     </style>
 </resources>
 

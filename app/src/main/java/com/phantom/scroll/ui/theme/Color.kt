@@ -17,3 +17,12 @@ val TextTertiary = Color(0xFF48484A)
 val SuccessGreen = Color(0xFF30D158)
 val WarningOrange = Color(0xFFFF9F0A)
 val ErrorRed = Color(0xFFFF453A)
+
+// ===== Overlay redesign (light/green) =====
+val LightBackground = Color(0xFFF4F4F6)
+val LightSurface = Color(0xFFFFFFFF)
+val OverlayGreen = Color(0xFF1E9E55)
+val OverlayGreenSoft = Color(0xFFE8F5EC)
+val OverlayWarningOrange = Color(0xFFD98324)
+val OnLight = Color(0xFF2A2A33)
+val OnLightMuted = Color(0xFF6E6E76)

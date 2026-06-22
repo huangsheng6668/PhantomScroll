@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.phantom.scroll.MainActivity
 import com.phantom.scroll.R
 
@@ -85,6 +86,7 @@ object NotificationHelper {
             .setContentTitle("PhantomScroll")
             .setContentText("状态: $statusText")
             .setSmallIcon(R.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(context, R.color.overlay_accent))
             .setContentIntent(mainPendingIntent)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
