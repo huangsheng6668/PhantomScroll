@@ -46,4 +46,10 @@ class OverlayGeometryTest {
         // and should return min as a safe default
         assertEquals(0, OverlayGeometry.clamp(50, 0, -10))
     }
+
+    @Test
+    fun panel_and_collapse_width_constants_match_redesign() {
+        assertEquals(240, OverlayGeometry.PANEL_WIDTH_DP)
+        assertEquals(56, OverlayGeometry.COLLAPSED_WIDTH_DP)
+    }
 }

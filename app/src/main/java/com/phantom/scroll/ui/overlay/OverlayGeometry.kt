@@ -6,6 +6,12 @@ package com.phantom.scroll.ui.overlay
  */
 object OverlayGeometry {
 
+    /** Redesigned panel width (dp). See docs/superpowers/specs/2026-06-22-overlay-redesign-design.md. */
+    const val PANEL_WIDTH_DP = 240
+
+    /** Redesigned collapsed bubble width (dp). */
+    const val COLLAPSED_WIDTH_DP = 56
+
     /** Result of computing the snap target after a drag ends. */
     data class SnapTarget(val x: Int, val isLeftEdge: Boolean)
 
