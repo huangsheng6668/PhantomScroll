@@ -3,15 +3,15 @@ package com.phantom.scroll.ui.overlay
 import android.animation.ValueAnimator
 import android.content.Context
 import android.util.AttributeSet
-import android.view.LayoutInflater
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
-import android.widget.Button
+import android.view.animation.AlphaAnimation
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.core.content.res.ResourcesCompat
-import com.google.android.material.slider.Slider
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.phantom.scroll.R
 import com.phantom.scroll.data.Preset
 import com.phantom.scroll.data.PresetSelection
@@ -30,13 +30,13 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
- * Native floating overlay view. Renders the collapsed handle or the expanded panel based on
- * [PanelState], collects [SettingsRepository] flows to refresh itself imperatively, and emits
- * user interactions (slider/button/drag) back into the repository / panel-state flow / position
- * callback. Holds NO business logic beyond view↔state binding.
+ * Orchestrator for the redesigned overlay. Inflates the panel + bubble, collects
+ * [SettingsRepository] flows to refresh imperative views, and emits user interactions back.
+ * Holds NO business logic beyond view↔state binding. Param/badge logic lives in [ParamSteps] /
+ * [BadgeFormatter]; geometry in [OverlayGeometry].
  *
- * MUST be constructed with a Material3-themed context (the overlay Slider requires it); the
- * controller wraps the service context in [R.style.Theme_PhantomScroll_Overlay].
+ * MUST be constructed with a Material3-themed context (Slider requires it); the controller wraps
+ * the service context in [R.style.Theme_PhantomScroll_Overlay].
  */
 class FloatingOverlayView @JvmOverloads constructor(
     context: Context,
@@ -52,32 +52,32 @@ class FloatingOverlayView @JvmOverloads constructor(
     private var onUpdatePosition: ((x: Int, y: Int) -> Unit)? = null
     private var bound = false
 
-    // panel child views
+    // panel children
     private val panelRoot: View
-    private val titleText: TextView
+    private val settingsRoot: View
+    private val settingsButton: View
     private val foldButton: View
-    private val durationSlider: Slider
-    private val intervalSlider: Slider
-    private val distanceSlider: Slider
-    private val durationValue: TextView
-    private val intervalValue: TextView
-    private val distanceValue: TextView
-    private val playButton: Button
-    // handle child views
-    private val handleRoot: View
-    private val handleVisualWrap: View
-    private val handleVisual: View
-
-    // Phase 3 controls
-    private val presetRow: View
+    private val statusPill: TextView
+    private val statusMeta: TextView
+    private val metricCount: TextView
+    private val metricElapsed: TextView
+    private val cellSpeed: ParamCellView
+    private val cellInterval: ParamCellView
+    private val cellDistance: ParamCellView
+    private val directionCell: View
+    private val directionValue: TextView
     private val chipNovel: TextView
     private val chipComic: TextView
     private val chipCustom: TextView
-    private val directionButton: com.google.android.material.button.MaterialButton
-    private val statsRow: View
-    private val statsText: TextView
-    private val perAppSwitch: com.google.android.material.materialswitch.MaterialSwitch
+    private val forgetAppBtn: View
+    private val perAppSwitch: MaterialSwitch
     private val perAppLabel: TextView
+    private val toggleBtn: com.google.android.material.button.MaterialButton
+    private val resetBtn: com.google.android.material.button.MaterialButton
+    // bubble
+    private val bubble: BubbleView
+
+    private var settingsVisible = false
 
     // position / edge state
     private var currentX = 0
@@ -93,97 +93,97 @@ class FloatingOverlayView @JvmOverloads constructor(
     private var disallowIntercept = false
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private var snapAnimator: ValueAnimator? = null
-
-    // guard: programmatic slider setValue triggers the change listener; skip repo write then.
     private var applyingFromFlow = false
 
+    private val density get() = resources.displayMetrics.density
+    private fun panelWidthPx() = (OverlayGeometry.PANEL_WIDTH_DP * density).toInt()
+    private fun collapsedWidthPx() = (OverlayGeometry.COLLAPSED_WIDTH_DP * density).toInt()
+
     init {
-        LayoutInflater.from(context).inflate(R.layout.overlay_panel, this, true)
-        LayoutInflater.from(context).inflate(R.layout.overlay_handle, this, true)
+        inflate(context, R.layout.overlay_panel, this)
+        // BubbleView inflates overlay_bubble.xml itself; just add one (avoids duplicate bubble_root IDs).
+        bubble = BubbleView(context).also {
+            addView(it, LayoutParams(collapsedWidthPx(), collapsedWidthPx()))
+        }
 
         panelRoot = findViewById(R.id.panel_root)
-        titleText = findViewById(R.id.title_text)
+        settingsRoot = findViewById(R.id.settings_root)
+        settingsButton = findViewById(R.id.settings_button)
         foldButton = findViewById(R.id.fold_button)
-        durationSlider = findViewById(R.id.slider_duration)
-        intervalSlider = findViewById(R.id.slider_interval)
-        distanceSlider = findViewById(R.id.slider_distance)
-        durationValue = findViewById(R.id.value_duration)
-        intervalValue = findViewById(R.id.value_interval)
-        distanceValue = findViewById(R.id.value_distance)
-        playButton = findViewById(R.id.play_button)
-
-        handleRoot = findViewById(R.id.handle_root)
-        handleVisualWrap = findViewById(R.id.handle_visual_wrap)
-        handleVisual = findViewById(R.id.handle_visual)
-
-        // Phase 3 controls
-        presetRow = findViewById(R.id.preset_row)
+        statusPill = findViewById(R.id.status_pill)
+        statusMeta = findViewById(R.id.status_meta)
+        metricCount = findViewById(R.id.metric_count)
+        metricElapsed = findViewById(R.id.metric_elapsed)
+        cellSpeed = findViewById(R.id.param_cell_speed)
+        cellInterval = findViewById(R.id.param_cell_interval)
+        cellDistance = findViewById(R.id.param_cell_distance)
+        directionCell = findViewById(R.id.direction_cell)
+        directionValue = findViewById(R.id.direction_value)
         chipNovel = findViewById(R.id.chip_novel)
         chipComic = findViewById(R.id.chip_comic)
         chipCustom = findViewById(R.id.chip_custom)
-        directionButton = findViewById(R.id.direction_button)
-        statsRow = findViewById(R.id.stats_row)
-        statsText = findViewById(R.id.stats_text)
+        forgetAppBtn = findViewById(R.id.forget_app_btn)
         perAppSwitch = findViewById(R.id.perapp_switch)
         perAppLabel = findViewById(R.id.perapp_label)
+        toggleBtn = findViewById(R.id.toggle_btn)
+        resetBtn = findViewById(R.id.reset_btn)
 
-        // user → repository (only for genuine user changes)
-        durationSlider.addOnChangeListener { _, value, fromUser ->
-            if (fromUser && !applyingFromFlow) updateActive { it.copy(duration = value.toLong()) }
-        }
-        intervalSlider.addOnChangeListener { _, value, fromUser ->
-            if (fromUser && !applyingFromFlow) updateActive { it.copy(interval = value.toLong()) }
-        }
-        distanceSlider.addOnChangeListener { _, value, fromUser ->
-            if (fromUser && !applyingFromFlow) updateActive { it.copy(distanceRatio = value) }
-        }
+        configureCells()
 
-        handleRoot.setOnClickListener { panelStateFlow?.value = PanelState.Expanded }
         foldButton.setOnClickListener { panelStateFlow?.value = PanelState.Collapsed }
-        playButton.setOnClickListener { repository?.toggleRunning() }
-
+        settingsButton.setOnClickListener { toggleSettings() }
+        toggleBtn.setOnClickListener { repository?.toggleRunning() }
+        resetBtn.setOnClickListener {
+            scope.launch { repository?.resetStats() }
+        }
         chipNovel.setOnClickListener { scope.launch { repository?.applyPreset(Preset.NOVEL) } }
         chipComic.setOnClickListener { scope.launch { repository?.applyPreset(Preset.COMIC) } }
         chipCustom.setOnClickListener { scope.launch { repository?.applyCustomPreset() } }
-
-        directionButton.setOnClickListener {
+        forgetAppBtn.setOnClickListener {
+            scope.launch {
+                repository?.forgetActiveProfile()
+                toast("已忘记当前 App 配置")
+            }
+        }
+        directionCell.setOnClickListener {
             val repo = repository ?: return@setOnClickListener
             val active = repo.activeSettings.value
             val next = if (active.direction == ScrollDirection.UP) ScrollDirection.DOWN else ScrollDirection.UP
             scope.launch { repo.updateActive(active.copy(direction = next)) }
         }
-
-        statsRow.setOnClickListener {
-            val repo = repository ?: return@setOnClickListener
-            scope.launch {
-                repo.resetStats()
-                PhantomToast.show(context, "统计已重置")
-            }
-        }
-
         perAppSwitch.setOnCheckedChangeListener { _, checked ->
-            // 避免程序化 setChecked 触发写：用 applyingFromFlow 守卫（复用现有标志）
             if (applyingFromFlow) return@setOnCheckedChangeListener
             repository?.setPerAppEnabled(checked)
         }
 
-        perAppLabel.setOnLongClickListener {
-            val repo = repository ?: return@setOnLongClickListener false
-            scope.launch {
-                repo.forgetActiveProfile()
-                PhantomToast.show(context, "已忘记当前 App 配置")
-            }
-            true
-        }
-
-        applyState(PanelState.Expanded) // default: panel visible, handle hidden
+        applyState(PanelState.Expanded)
         applyRunning(false)
     }
 
-    /**
-     * Wires dependencies. MUST be called after construction and before the view is added to the
-     * WindowManager (so onAttachedToWindow can start collecting immediately).
-     */
+    private fun configureCells() {
+        cellSpeed.configure(
+            label = "速度",
+            valueFrom = 150f, valueTo = 1500f,
+            stepResolver = { ParamSteps.toSpeedLabel(it.toLong()) }
+        )
+        cellInterval.configure(
+            label = "间隔",
+            valueFrom = 500f, valueTo = 10000f,
+            stepResolver = { ParamSteps.toIntervalLabel(it.toLong()) }
+        )
+        // distance resolver closes over screen height; re-bound on size change via applySettings.
+        cellDistance.configure(
+            label = "距离",
+            valueFrom = 0.30f, valueTo = 0.95f,
+            stepResolver = { ratio -> ParamSteps.toDistanceLabel(ratio, screenH()) }
+        )
+        cellSpeed.onUserChange = { v -> updateActive { it.copy(duration = v.toLong()) } }
+        cellInterval.onUserChange = { v -> updateActive { it.copy(interval = v.toLong()) } }
+        cellDistance.onUserChange = { v -> updateActive { it.copy(distanceRatio = v) } }
+    }
+
+    private fun screenH(): Int = repository?.screenHeight?.value ?: 1
+
     fun bind(
         repository: SettingsRepository,
         panelStateFlow: MutableStateFlow<PanelState>,
@@ -231,73 +231,79 @@ class FloatingOverlayView @JvmOverloads constructor(
     private fun applyState(state: PanelState) {
         val repo = repository ?: return
         val screenWidth = repo.screenWidth.value
-        val panelWidthPx = (130f * resources.displayMetrics.density).toInt()
-        val handleWidthPx = (32f * resources.displayMetrics.density).toInt()
-
         when (state) {
             PanelState.Collapsed -> {
-                handleRoot.visibility = VISIBLE
+                bubble.visibility = VISIBLE
                 panelRoot.visibility = GONE
-                currentX = if (isLeftEdge) 0 else screenWidth - handleWidthPx
+                currentX = OverlayGeometry.edgeX(isLeftEdge, screenWidth, collapsedWidthPx())
                 onUpdatePosition?.invoke(currentX, currentY)
             }
             PanelState.Expanded -> {
                 panelRoot.visibility = VISIBLE
-                handleRoot.visibility = GONE
-                currentX = if (isLeftEdge) 0 else screenWidth - panelWidthPx
+                bubble.visibility = GONE
+                currentX = OverlayGeometry.edgeX(isLeftEdge, screenWidth, panelWidthPx())
                 onUpdatePosition?.invoke(currentX, currentY)
             }
             PanelState.Snapping -> {
                 panelRoot.visibility = VISIBLE
-                handleRoot.visibility = GONE
+                bubble.visibility = GONE
             }
         }
     }
 
     private fun applySettings(s: ScrollSettings) {
         applyingFromFlow = true
-        // Defensive: clamp values to Slider boundaries in case stored data is out-of-bounds.
-        durationSlider.value = s.duration.toFloat().coerceIn(durationSlider.valueFrom, durationSlider.valueTo)
-        intervalSlider.value = s.interval.toFloat().coerceIn(intervalSlider.valueFrom, intervalSlider.valueTo)
-        distanceSlider.value = s.distanceRatio.coerceIn(distanceSlider.valueFrom, distanceSlider.valueTo)
+        cellSpeed.setValue(s.duration.toFloat(), fromFlow = true)
+        cellInterval.setValue(s.interval.toFloat(), fromFlow = true)
+        cellDistance.setValue(s.distanceRatio, fromFlow = true)
         applyingFromFlow = false
-        durationValue.text = "${s.duration}ms"
-        intervalValue.text = String.format("%.1fs", s.interval / 1000f)
-        distanceValue.text = "${(s.distanceRatio * 100).toInt()}%"
-        // direction button glyph tracks the active direction (Task 9)
-        directionButton.text = if (s.direction == ScrollDirection.DOWN) "↓" else "↑"
+        directionValue.text = if (s.direction == ScrollDirection.DOWN) "↓ 向下" else "↑ 向上"
     }
 
     private fun applyRunning(running: Boolean) {
-        playButton.text = if (running) "⏸ 暂停" else "▶ 开始"
-        val color = ResourcesCompat.getColor(
-            resources,
-            if (running) R.color.error_red else R.color.success_green,
-            null
+        // status pill: green running / amber paused
+        statusPill.text = if (running) "● 运行中" else "● 已暂停"
+        statusPill.setBackgroundResource(
+            if (running) R.drawable.overlay_status_pill_running else R.drawable.overlay_status_pill_paused
         )
-        playButton.backgroundTintList = android.content.res.ColorStateList.valueOf(color)
+        statusPill.setTextColor(ResourcesCompat.getColor(resources, R.color.overlay_accent.takeIf { running } ?: R.color.overlay_warning, null))
+        // main button: running = neutral outline ("暂停滑动"); paused = green filled ("开始滑动")
+        toggleBtn.text = if (running) "⏸ 暂停滑动" else "▶ 开始滑动"
+        if (running) {
+            toggleBtn.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                ResourcesCompat.getColor(resources, R.color.overlay_surface_2, null))
+            toggleBtn.strokeColor = android.content.res.ColorStateList.valueOf(
+                ResourcesCompat.getColor(resources, R.color.overlay_border, null))
+            toggleBtn.strokeWidth = density.toInt().coerceAtLeast(1) // 1dp outline
+            toggleBtn.setTextColor(ResourcesCompat.getColor(resources, R.color.overlay_fg, null))
+        } else {
+            toggleBtn.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                ResourcesCompat.getColor(resources, R.color.overlay_accent, null))
+            toggleBtn.strokeWidth = 0
+            toggleBtn.setTextColor(ResourcesCompat.getColor(resources, R.color.overlay_on_accent, null))
+        }
     }
 
     private fun applyPresetSelection(sel: PresetSelection) {
-        // single-select highlight: selected chip uses the selected bg + cyan text
         val selectedBg = ResourcesCompat.getDrawable(resources, R.drawable.overlay_chip_bg_selected, null)
         val plainBg = ResourcesCompat.getDrawable(resources, R.drawable.overlay_chip_bg, null)
-        val cyan = ResourcesCompat.getColor(resources, R.color.phantom_cyan, null)
-        val plain = ResourcesCompat.getColor(resources, R.color.text_primary, null)
+        val accent = ResourcesCompat.getColor(resources, R.color.overlay_accent, null)
+        val fg = ResourcesCompat.getColor(resources, R.color.overlay_fg, null)
         listOf(
             chipNovel to (sel is PresetSelection.BuiltIn && sel.preset == Preset.NOVEL),
             chipComic to (sel is PresetSelection.BuiltIn && sel.preset == Preset.COMIC),
             chipCustom to (sel is PresetSelection.Custom)
         ).forEach { (chip, on) ->
             chip.background = if (on) selectedBg else plainBg
-            chip.setTextColor(if (on) cyan else plain)
+            chip.setTextColor(if (on) accent else fg)
         }
     }
 
     private fun applyStats(stats: ScrollStats) {
-        // spec §3.2: elapsed shown in minutes, Math.round(elapsedMs / 60000.0)
+        metricCount.text = stats.swipeCount.toString()
         val minutes = Math.round(stats.elapsedMs / 60000.0)
-        statsText.text = "已翻 ${stats.swipeCount} 次 · 约 $minutes 分钟"
+        metricElapsed.text = "约 $minutes 分钟"
+        bubble.setCount(stats.swipeCount.toInt())
     }
 
     private fun applyPerAppEnabled(enabled: Boolean) {
@@ -308,6 +314,7 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private fun applyCurrentPackage(pkg: String?) {
+        statusMeta.text = "前台 · ${pkg ?: "-"}"
         updatePerAppLabelVisibility()
     }
 
@@ -316,16 +323,22 @@ class FloatingOverlayView @JvmOverloads constructor(
         val pkg = repo.currentPackage.value
         val enabled = repo.perAppEnabled.value
         perAppLabel.visibility = if (pkg != null && enabled) VISIBLE else GONE
-        perAppLabel.text = if (pkg != null) "📖 当前：$pkg" else ""
-        // 用包名做展示名（避免引 PackageManager 解析 label 的开销与权限故事）；
-        // 若需友好名，Phase 4 再加 PackageManager 缓存。
+        perAppLabel.text = if (pkg != null) "当前：$pkg" else ""
     }
 
-    private object PhantomToast {
-        fun show(ctx: Context, msg: String) {
-            android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
-        }
+    private fun toggleSettings() {
+        settingsVisible = !settingsVisible
+        settingsRoot.visibility = if (settingsVisible) VISIBLE else GONE
+        // 120ms crossfade
+        val anim = AlphaAnimation(if (settingsVisible) 0f else 1f, if (settingsVisible) 1f else 0f)
+        anim.duration = 120
+        settingsRoot.startAnimation(anim)
+        // if panel now taller and near bottom, re-clamp Y
+        repositionToBounds(repository?.screenWidth?.value ?: 0, repository?.screenHeight?.value ?: 0)
     }
+
+    private fun toast(msg: String) =
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
 
     private fun updateActive(transform: (ScrollSettings) -> ScrollSettings) {
         val repo = repository ?: return
@@ -333,16 +346,11 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private fun repositionToBounds(screenWidth: Int, screenHeight: Int) {
-        // Use actual measured view dimensions; fallback to 130dp / WRAP height estimates.
         val flow = panelStateFlow
         val isCollapsed = flow != null && flow.value == PanelState.Collapsed
-        val widthPx = if (isCollapsed) {
-            (32f * resources.displayMetrics.density).toInt()
-        } else {
-            (130f * resources.displayMetrics.density).toInt()
-        }
+        val widthPx = if (isCollapsed) collapsedWidthPx() else panelWidthPx()
         val panelH = panelRoot.height.takeIf { it > 0 }
-            ?: (200f * resources.displayMetrics.density).toInt()
+            ?: (260f * density).toInt()
         val nx = if (!dragging) {
             OverlayGeometry.edgeX(isLeftEdge, screenWidth, widthPx)
         } else {
@@ -364,33 +372,22 @@ class FloatingOverlayView @JvmOverloads constructor(
                ev.rawY >= loc[1] && ev.rawY <= loc[1] + view.height
     }
 
-    /**
-     * Whole-panel drag: intercept once movement exceeds touch slop. Material Slider calls
-     * requestDisallowInterceptTouchEvent while its thumb is dragged, so it still works; button
-     * taps don't move so they aren't stolen.
-     */
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
             snapAnimator?.cancel()
             downRawX = ev.rawX; downRawY = ev.rawY
             lastRawX = ev.rawX; lastRawY = ev.rawY
             dragging = false
-
-            // Do not intercept if user touches interactive children to avoid click cancellation or slider lag.
-            val inInteractive = isTouchInsideView(ev, durationSlider) ||
-                    isTouchInsideView(ev, intervalSlider) ||
-                    isTouchInsideView(ev, distanceSlider) ||
-                    isTouchInsideView(ev, playButton) ||
-                    isTouchInsideView(ev, foldButton) ||
-                    isTouchInsideView(ev, presetRow) ||
-                    isTouchInsideView(ev, directionButton) ||
-                    isTouchInsideView(ev, statsRow) ||
-                    isTouchInsideView(ev, perAppSwitch)
-            disallowIntercept = inInteractive
+            // interactive children: expanded sliders + direction cell + buttons + switch + chips + settings btn
+            val expandedSliders = listOf(cellSpeed, cellInterval, cellDistance)
+                .filter { it.isExpanded }.map { it.slider }
+            val interactive = expandedSliders + listOf(
+                directionCell, toggleBtn, resetBtn, foldButton, settingsButton,
+                perAppSwitch, chipNovel, chipComic, chipCustom, forgetAppBtn
+            )
+            disallowIntercept = interactive.any { isTouchInsideView(ev, it) }
         }
-
         if (disallowIntercept) return false
-
         when (ev.actionMasked) {
             MotionEvent.ACTION_MOVE -> {
                 if (!dragging &&
@@ -398,46 +395,34 @@ class FloatingOverlayView @JvmOverloads constructor(
                     dragging = true
                 }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                disallowIntercept = false
-            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> disallowIntercept = false
         }
         return dragging
     }
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
-        // Outside touch (FLAG_WATCH_OUTSIDE_TOUCH in Expanded state) -> collapse.
         if (ev.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+            // settings open → close settings first (don't collapse whole panel)
+            if (settingsVisible) { toggleSettings(); return true }
             val flow = panelStateFlow
-            if (flow != null && flow.value == PanelState.Expanded) {
-                flow.value = PanelState.Collapsed
-            }
+            if (flow != null && flow.value == PanelState.Expanded) flow.value = PanelState.Collapsed
             return true
         }
-        // Consume ACTION_DOWN to ensure subsequent ACTION_MOVE/UP events are delivered to this window.
-        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
-            return true
-        }
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) return true
         val repo = repository ?: return false
         when (ev.actionMasked) {
             MotionEvent.ACTION_MOVE -> {
-                if (!dragging) {
-                    if (abs(ev.rawX - downRawX) > touchSlop || abs(ev.rawY - downRawY) > touchSlop) {
-                        dragging = true
-                        lastRawX = ev.rawX
-                        lastRawY = ev.rawY
-                    }
+                if (!dragging &&
+                    (abs(ev.rawX - downRawX) > touchSlop || abs(ev.rawY - downRawY) > touchSlop)) {
+                    dragging = true; lastRawX = ev.rawX; lastRawY = ev.rawY
                 }
                 if (dragging) {
                     val w = repo.screenWidth.value
                     val h = repo.screenHeight.value
                     val dx = (ev.rawX - lastRawX).toInt()
                     val dy = (ev.rawY - lastRawY).toInt()
-                    // 130dp panel fallback in px; matches repositionToBounds logic.
-                    val panelW = panelRoot.width.takeIf { it > 0 }
-                        ?: (130f * resources.displayMetrics.density).toInt()
-                    val panelH = panelRoot.height.takeIf { it > 0 }
-                        ?: (200f * resources.displayMetrics.density).toInt()
+                    val panelW = panelRoot.width.takeIf { it > 0 } ?: panelWidthPx()
+                    val panelH = panelRoot.height.takeIf { it > 0 } ?: (260f * density).toInt()
                     currentX = OverlayGeometry.clamp(currentX + dx, 0, w - panelW)
                     currentY = OverlayGeometry.clamp(currentY + dy, 0, h - panelH)
                     lastRawX = ev.rawX; lastRawY = ev.rawY
@@ -446,10 +431,7 @@ class FloatingOverlayView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 disallowIntercept = false
-                if (dragging) {
-                    dragging = false
-                    performSnap()
-                }
+                if (dragging) { dragging = false; performSnap() }
             }
         }
         return true
@@ -459,15 +441,13 @@ class FloatingOverlayView @JvmOverloads constructor(
         val repo = repository ?: return
         val flow = panelStateFlow ?: return
         val screenWidth = repo.screenWidth.value
-        val panelWidthPx = panelRoot.width.takeIf { it > 0 }
-            ?: (130f * resources.displayMetrics.density).toInt()
+        val panelWidthPx = panelRoot.width.takeIf { it > 0 } ?: panelWidthPx()
         val target = OverlayGeometry.snapTarget(
             panelCenterX = currentX + panelWidthPx / 2,
             screenWidth = screenWidth,
             panelWidthPx = panelWidthPx
         )
         isLeftEdge = target.isLeftEdge
-        updateHandleEdge()
         flow.value = PanelState.Snapping
         snapAnimator = ValueAnimator.ofInt(currentX, target.x).apply {
             duration = 250
@@ -477,20 +457,6 @@ class FloatingOverlayView @JvmOverloads constructor(
             }
         }
         snapAnimator?.start()
-        // Collapse to handle once the snap finishes (small buffer over 250ms).
         postDelayed({ if (flow.value == PanelState.Snapping) flow.value = PanelState.Collapsed }, 270)
-    }
-
-    private fun updateHandleEdge() {
-        handleVisual.background = ResourcesCompat.getDrawable(
-            resources,
-            if (isLeftEdge) R.drawable.overlay_handle_left else R.drawable.overlay_handle_right,
-            null
-        )
-        val params = (handleVisualWrap.layoutParams as FrameLayout.LayoutParams).apply {
-            gravity = if (isLeftEdge) (android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL)
-            else (android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL)
-        }
-        handleVisualWrap.layoutParams = params
     }
 }

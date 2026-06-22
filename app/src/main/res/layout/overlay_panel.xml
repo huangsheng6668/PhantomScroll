@@ -2,282 +2,279 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/panel_root"
-    android:layout_width="130dp"
+    android:layout_width="240dp"
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="@drawable/overlay_card_border"
     android:padding="6dp">
 
-    <!-- Title row: app name + quick-fold -->
+    <!-- drag handle (visual only; whole panel draggable) -->
+    <View
+        android:layout_width="36dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="2dp"
+        android:background="@drawable/overlay_chip_bg" />
+
+    <!-- Header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="4dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="8dp">
         <TextView
-            android:id="@+id/title_text"
+            android:id="@+id/header_icon"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:gravity="center"
+            android:text="👻"
+            android:textSize="18sp"
+            android:background="@drawable/overlay_status_pill_running" />
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="☽ Phantom"
-            android:textColor="@color/phantom_cyan"
-            android:textSize="11sp"
-            android:textStyle="bold" />
+            android:orientation="vertical"
+            android:layout_marginStart="8dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="自动滑动"
+                android:textColor="@color/overlay_fg"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="AUTO SCROLL"
+                android:textColor="@color/overlay_subtle"
+                android:textSize="9sp"
+                android:fontFamily="monospace"
+                android:letterSpacing="0.08" />
+        </LinearLayout>
         <FrameLayout
             android:id="@+id/fold_button"
-            android:layout_width="16dp"
-            android:layout_height="16dp"
-            android:background="@drawable/overlay_fold_bg"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:background="@drawable/overlay_chip_bg"
             android:clickable="true"
             android:focusable="true">
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:gravity="center"
-                android:text="—"
-                android:textColor="@color/text_primary"
-                android:textSize="9sp"
-                android:textStyle="bold" />
+                android:text="⌄"
+                android:textColor="@color/overlay_muted"
+                android:textSize="14sp" />
+        </FrameLayout>
+        <FrameLayout
+            android:id="@+id/settings_button"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginStart="4dp"
+            android:background="@drawable/overlay_chip_bg"
+            android:clickable="true"
+            android:focusable="true">
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="⚙"
+                android:textColor="@color/overlay_muted"
+                android:textSize="13sp" />
         </FrameLayout>
     </LinearLayout>
 
-    <Space
-        android:layout_width="match_parent"
-        android:layout_height="4dp" />
-
-    <!-- Preset row: 小说 | 漫画 | 自定义 (single-select highlight) -->
+    <!-- Status row -->
     <LinearLayout
-        android:id="@+id/preset_row"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center">
-        <TextView
-            android:id="@+id/chip_novel"
-            android:layout_width="0dp"
-            android:layout_height="22dp"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="小说"
-            android:textColor="@color/text_primary"
-            android:textSize="9sp"
-            android:background="@drawable/overlay_chip_bg"
-            android:clickable="true"
-            android:focusable="true" />
-        <Space android:layout_width="4dp" android:layout_height="match_parent" />
-        <TextView
-            android:id="@+id/chip_comic"
-            android:layout_width="0dp"
-            android:layout_height="22dp"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="漫画"
-            android:textColor="@color/text_primary"
-            android:textSize="9sp"
-            android:background="@drawable/overlay_chip_bg"
-            android:clickable="true"
-            android:focusable="true" />
-        <Space android:layout_width="4dp" android:layout_height="match_parent" />
-        <TextView
-            android:id="@+id/chip_custom"
-            android:layout_width="0dp"
-            android:layout_height="22dp"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="自定义"
-            android:textColor="@color/text_primary"
-            android:textSize="9sp"
-            android:background="@drawable/overlay_chip_bg"
-            android:clickable="true"
-            android:focusable="true" />
-    </LinearLayout>
-
-    <Space android:layout_width="match_parent" android:layout_height="4dp" />
-
-    <!-- 速度 (duration) -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="速度"
-                android:textColor="@color/text_secondary"
-                android:textSize="9sp" />
-            <TextView
-                android:id="@+id/value_duration"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/phantom_cyan"
-                android:textSize="10sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-        <com.google.android.material.slider.Slider
-            android:id="@+id/slider_duration"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:valueFrom="150.0"
-            android:valueTo="1500.0"
-            android:value="500.0"
-            app:labelBehavior="gone"
-            app:thumbColor="@color/phantom_cyan"
-            app:trackColorActive="@color/phantom_cyan"
-            app:trackColorInactive="@color/text_tertiary" />
-    </LinearLayout>
-
-    <!-- 间隔 (interval) -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="间隔"
-                android:textColor="@color/text_secondary"
-                android:textSize="9sp" />
-            <TextView
-                android:id="@+id/value_interval"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/phantom_cyan"
-                android:textSize="10sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-        <com.google.android.material.slider.Slider
-            android:id="@+id/slider_interval"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:valueFrom="500.0"
-            android:valueTo="10000.0"
-            android:value="2000.0"
-            app:labelBehavior="gone"
-            app:thumbColor="@color/phantom_cyan"
-            app:trackColorActive="@color/phantom_cyan"
-            app:trackColorInactive="@color/text_tertiary" />
-    </LinearLayout>
-
-    <!-- 距离 (distanceRatio) -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="距离"
-                android:textColor="@color/text_secondary"
-                android:textSize="9sp" />
-            <TextView
-                android:id="@+id/value_distance"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/phantom_cyan"
-                android:textSize="10sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-        <com.google.android.material.slider.Slider
-            android:id="@+id/slider_distance"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:valueFrom="0.30"
-            android:valueTo="0.95"
-            android:value="0.75"
-            app:labelBehavior="gone"
-            app:thumbColor="@color/phantom_cyan"
-            app:trackColorActive="@color/phantom_cyan"
-            app:trackColorInactive="@color/text_tertiary" />
-    </LinearLayout>
-
-    <Space
-        android:layout_width="match_parent"
-        android:layout_height="4dp" />
-
-    <!-- Direction toggle: ↑ (UP, next page) / ↓ (DOWN, previous page) -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="方向"
-            android:textColor="@color/text_secondary"
-            android:textSize="9sp" />
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/direction_button"
-            android:layout_width="44dp"
-            android:layout_height="24dp"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:padding="0dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:text="↑"
-            android:textColor="@color/text_primary"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            app:cornerRadius="12dp"
-            app:backgroundTint="@color/phantom_blue_50" />
-    </LinearLayout>
-
-    <Space android:layout_width="match_parent" android:layout_height="4dp" />
-
-    <!-- Stats row: 已翻 N 次 · 约 M 分钟 (click to reset) -->
-    <LinearLayout
-        android:id="@+id/stats_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:clickable="true"
-        android:focusable="true"
-        android:background="@drawable/overlay_chip_bg"
-        android:padding="3dp">
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="8dp">
         <TextView
-            android:id="@+id/stats_text"
+            android:id="@+id/status_pill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/overlay_status_pill_running"
+            android:paddingStart="9dp"
+            android:paddingEnd="9dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:text="● 运行中"
+            android:textColor="@color/overlay_accent"
+            android:textSize="10.5sp"
+            android:fontFamily="monospace"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/status_meta"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:gravity="center"
-            android:text="已翻 0 次 · 约 0 分钟"
-            android:textColor="@color/text_secondary"
-            android:textSize="8sp" />
+            android:gravity="end"
+            android:text="前台 · -"
+            android:textColor="@color/overlay_subtle"
+            android:textSize="10.5sp"
+            android:fontFamily="monospace"
+            android:maxLines="1"
+            android:ellipsize="end" />
     </LinearLayout>
 
-    <Space android:layout_width="match_parent" android:layout_height="4dp" />
-
-    <!-- Per-app row: switch + current app label -->
+    <!-- Metric section -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:gravity="bottom"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="8dp">
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="已滑动"
+                android:textColor="@color/overlay_subtle"
+                android:textSize="9.5sp"
+                android:fontFamily="monospace"
+                android:textAllCaps="true" />
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="bottom">
+                <TextView
+                    android:id="@+id/metric_count"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textColor="@color/overlay_fg"
+                    android:textSize="26sp"
+                    android:textStyle="bold"
+                    android:fontFamily="monospace" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="2dp"
+                    android:layout_marginBottom="3dp"
+                    android:text="次"
+                    android:textColor="@color/overlay_muted"
+                    android:textSize="11sp" />
+            </LinearLayout>
+        </LinearLayout>
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="end">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="时长"
+                android:textColor="@color/overlay_subtle"
+                android:textSize="9.5sp"
+                android:fontFamily="monospace"
+                android:textAllCaps="true" />
+            <TextView
+                android:id="@+id/metric_elapsed"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="约 0 分钟"
+                android:textColor="@color/overlay_fg"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:fontFamily="monospace" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 2×2 param grid -->
+    <GridLayout
+        android:id="@+id/param_grid"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:columnCount="2"
+        android:rowCount="2"
+        android:useDefaultMargins="true">
+        <com.phantom.scroll.ui.overlay.ParamCellView
+            android:id="@+id/param_cell_speed"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_columnWeight="1"
+            android:layout_rowWeight="1" />
+        <com.phantom.scroll.ui.overlay.ParamCellView
+            android:id="@+id/param_cell_interval"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_columnWeight="1"
+            android:layout_rowWeight="1" />
+        <com.phantom.scroll.ui.overlay.ParamCellView
+            android:id="@+id/param_cell_distance"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_columnWeight="1"
+            android:layout_rowWeight="1" />
+        <!-- Direction toggle cell -->
+        <LinearLayout
+            android:id="@+id/direction_cell"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_columnWeight="1"
+            android:layout_gravity="fill"
+            android:orientation="vertical"
+            android:background="@drawable/overlay_param_cell_bg"
+            android:padding="9dp"
+            android:clickable="true"
+            android:focusable="true">
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="方向"
+                android:textColor="@color/overlay_muted"
+                android:textSize="11sp" />
+            <TextView
+                android:id="@+id/direction_value"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="↓ 向下"
+                android:textColor="@color/overlay_fg"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:fontFamily="monospace" />
+        </LinearLayout>
+    </GridLayout>
+
+    <!-- Settings sub-panel (included, GONE by default) -->
+    <include layout="@layout/overlay_settings" />
+
+    <!-- Per-app row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="9dp">
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="按 App 分别记录"
+            android:textColor="@color/overlay_fg"
+            android:textSize="12sp" />
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/perapp_switch"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="按App"
-            android:textColor="@color/text_secondary"
-            android:textSize="9sp" />
+            android:layout_height="wrap_content" />
     </LinearLayout>
     <TextView
         android:id="@+id/perapp_label"
@@ -285,26 +282,51 @@
         android:layout_height="wrap_content"
         android:gravity="center"
         android:text=""
-        android:textColor="@color/phantom_cyan"
+        android:textColor="@color/overlay_accent"
         android:textSize="8sp"
-        android:visibility="gone" />
+        android:visibility="gone"
+        android:paddingBottom="4dp" />
 
-    <!-- Play / Pause: MaterialButton handles custom backgroundTint and corner radius natively.
-         insetTop/insetBottom=0dp removes MaterialButton's default 6dp vertical insets
-         so android:layout_height="26dp" yields an actual 26dp button. -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/play_button"
+    <!-- Action bar -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="26dp"
-        android:minWidth="0dp"
-        android:minHeight="0dp"
-        android:padding="0dp"
-        android:insetTop="0dp"
-        android:insetBottom="0dp"
-        android:text="▶ 开始"
-        android:textColor="@color/text_primary"
-        android:textSize="10sp"
-        android:textStyle="bold"
-        app:cornerRadius="13dp"
-        app:backgroundTint="@color/success_green" />
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="6dp">
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/toggle_btn"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:padding="0dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="⏸ 暂停滑动"
+            android:textColor="@color/overlay_fg"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            app:cornerRadius="11dp"
+            app:backgroundTint="@color/overlay_surface_2"
+            app:strokeColor="@color/overlay_border"
+            app:strokeWidth="1dp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/reset_btn"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="7dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:padding="0dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="↻"
+            android:textColor="@color/overlay_muted"
+            android:textSize="16sp"
+            app:cornerRadius="11dp"
+            app:backgroundTint="@color/overlay_surface"
+            app:strokeColor="@color/overlay_border"
+            app:strokeWidth="1dp" />
+    </LinearLayout>
 </LinearLayout>
