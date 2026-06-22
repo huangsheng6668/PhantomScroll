@@ -213,8 +213,8 @@ fun MainScreen() {
                 
                 InstructionStep(num = 1, text = "授予上述全部权限，尤其是“忽略后台电池优化”以防服务被系统强杀。")
                 InstructionStep(num = 2, text = "建议在系统多任务卡片界面将本应用“加锁”，并允许其“自启动”。")
-                InstructionStep(num = 3, text = "权限就绪后，屏幕边缘会自动出现微型条状半圆手柄。")
-                InstructionStep(num = 4, text = "点击或向内滑动该手柄即可展开/折叠参数控制面板。")
+                InstructionStep(num = 3, text = "权限就绪后，悬浮控制面板会出现在屏幕边缘。点面板外的区域可把它收成边缘的小气泡。")
+                InstructionStep(num = 4, text = "点边缘小气泡可重新展开面板；也可点面板右上角的 ⌄ 手动折叠。")
                 InstructionStep(num = 5, text = "启动自动滑动后即可安心阅读，如需退出服务可从通知栏点击“停止服务”。")
             }
         }
