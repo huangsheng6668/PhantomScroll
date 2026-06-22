@@ -65,11 +65,13 @@
 
 面板宽度 **约 240dp**（现 130dp ↔ 设计稿 320dp 之间，兼顾 2×2 网格密度与阅读遮挡，可调）。
 
+> ⚠️ 实施注意：现有 `FloatingOverlayView.kt` 中面板宽度 `130f` **硬编码 3 处**（`applyState`/`repositionToBounds`/`onTouchEvent` 各 1），外加折叠手柄宽 `32f` **2 处**（`applyState`/`repositionToBounds`）——改尺寸时须一并替换。建议将面板宽提取为 `OverlayGeometry.PANEL_WIDTH_DP`、折叠宽为 `COLLAPSED_WIDTH_DP` 常量统一引用。
+
 ### 展开态面板
 
 ```
 ┌──────────────────────────────────────┐
-│         ▬▬▬  (drag handle)            │
+│         ▬▬▬  (drag handle)            │  ← 仅视觉指示拖拽区域，非独立热区；整面板均可拖
 │ ┌──┐  自动滑动          ⌄折叠  ⚙设置   │  头部：幽灵图标(绿描边) + 标题/AUTO SCROLL + 折叠/设置
 │ │👻│  AUTO SCROLL                     │
 │ └──┘                                  │
@@ -99,6 +101,11 @@
 │ 👻 │         │ 👻 │   56dp 圆形气泡，浅底 + 绿描边
 └────┘         └────┘
    [N]          [N]      计数角标(swipeCount，>99 显示 99+)，折叠态也实时跳动
+```
+
+> ⚠️ 角标性能：`BubbleView` 的 badge `setText()` 每次调用触发 layout pass。实现时须在 `setText()` 前做 `if (currentText != newText)` 短路判断，避免高频滑动模式（~0.6次/秒）下的无意义 relayout。
+
+```
 x≈0(全显)       x≈屏宽-56  完全可见地贴边
 ```
 
@@ -116,6 +123,8 @@ x≈0(全显)       x≈屏宽-56  完全可见地贴边
 | `FloatingOverlayView`（瘦身） | **编排者**：inflate 面板/气泡/设置三套布局，收集所有 flow 绑定，转发交互；不再内联网格逻辑 | 3 个 `ParamCellView` + 1 方向格；header/status/metric/toggle/action 绑定 |
 | `overlay_settings.xml`（⚙ 子面板） | 预设芯片（小说/漫画/自定义）+ "忘记当前 App"。同一悬浮窗内 visibility 切换 | 复用现有 chip drawable（改色） |
 
+**⚙ 子面板交互模式**：点击 ⚙ 按钮后，主面板内容区（状态胶囊以下、操作栏以上）**整体替换**为设置子面板（`GONE`/`VISIBLE` 切换，建议加 `crossfade` 120ms 过渡动画）；头部与底部操作栏保持不变。再次点击 ⚙ 或点击主面板外部回到主面板。若面板贴近屏幕底部边缘，子面板高度应 `wrap_content` 且面板整体通过 `repositionToBounds` 自动上推，防止溢出。
+
 抽出**纯逻辑**（沿用 SpeedCurve/OverlayGeometry 可测风格），单独 JVM 单测：
 - `ParamSteps.toSpeedLabel(durationMs) → "中速 3x"`（duration→档位+倍率）
 - `ParamSteps.toIntervalLabel(intervalMs) → "2.5s"`
@@ -124,6 +133,7 @@ x≈0(全显)       x≈屏宽-56  完全可见地贴边
 
 档位映射（实现时可微调阈值）：
 - 速度(duration 150–1500ms)：duration 越短 = 滚动越快 = 倍率越高。极速 8x(<400) / 快速 5x(400–700) / 中速 3x(700–1050) / 慢速 1x(>1050)
+  > ⚠️ 范围说明：Slider XML `valueFrom="150.0"` 与此处一致，但 `ScrollSettings.kt` 的 KDoc 注释写 `范围 200..1500`，实施时须同步修正 KDoc 为 `150..1500`。
 - 间隔(interval 500–10000ms)：显示秒数 `%.1fs`，档位 快(<1500)/中(1500–4000)/慢(>4000)
 - 距离(distanceRatio 0.30–0.95)：等效 px = `ratio × screenH`，档位 短(<0.5)/中(0.5–0.75)/长(>0.75)，显示如"中距 580px"
 
@@ -142,7 +152,7 @@ overlay_warning      #D98324    overlay_warning_soft #FBEFD9   (琥珀：已暂�
 - 头部幽灵图标保留（向 Phantom 品牌点头），改绿色描边。
 - `Theme_PhantomScroll_Overlay`（给 Slider 的 Material3 context）→ 浅色/绿基底。
 - 启动器图标：保留 neon ghost；cyan 令牌仅供图标 drawable 复用，不进新主题。
-- 通知强调色（`NotificationHelper`）→ 绿。
+- 通知强调色（`NotificationHelper`）→ 绿。具体实施：在 `buildNotification()` 的 `NotificationCompat.Builder` 链中增加 `.setColor(ContextCompat.getColor(context, R.color.overlay_accent))`（当前代码**未调用** `setColor()`，需新增）。
 
 ---
 
@@ -152,6 +162,7 @@ overlay_warning      #D98324    overlay_warning_soft #FBEFD9   (琥珀：已暂�
 
 - `Collapsed` 视觉 = `BubbleView`（原 `handle`）。`applyState`：Collapsed→显气泡隐面板；Expanded→显面板隐气泡；Snapping→显面板做动画。
 - 折叠宽 **32dp → 56dp**（气泡）。`OverlayGeometry.snapTarget / edgeX` 入参随之改；`OverlayGeometryTest` 同步更新。建议把折叠宽参数化（`collapsedWidthPx` 入参）而非硬编码，便于气泡/手柄切换。
+- 面板宽 **130dp → 240dp**。`FloatingOverlayView` 中所有 `(130f * density)` 硬编码（`applyState`×1、`repositionToBounds`×1、`onTouchEvent`×1）须统一替换；建议与折叠宽一起提取为 `OverlayGeometry` 常量。
 - 气泡贴边**完全可见**（x=0 或 x=屏宽−56dp），不再半隐藏。
 - 新增**面板内**交互态（不改 `PanelState`）：`ParamCellView.isExpanded`；展开滑块时，`FloatingOverlayView.onInterceptTouchEvent` 的"可交互子节点"列表加入该滑块，避免整面板拖动抢走滑块手势（扩展现有 `disallowIntercept` 机制）。
 - 气泡**仅点击展开**，不在折叠态拖拽。外部点击(`ACTION_OUTSIDE`)/⚙→折叠 等现有逻辑保留。
@@ -194,14 +205,15 @@ overlay_warning      #D98324    overlay_warning_soft #FBEFD9   (琥珀：已暂�
 
 **改色/微调**：
 - `res/values/colors.xml`（加 overlay_* 令牌）
-- `ui/theme/Color.kt` + `Theme.kt`（Compose 浅色/绿）
-- `notification/NotificationHelper.kt`（强调色→绿）
-- `ui/overlay/OverlayGeometry.kt`（折叠宽参数化，32→56dp）
+- `ui/theme/Color.kt`（新增浅色/绿色令牌：`OverlayGreen`、`LightBackground`、`LightSurface` 等）
+- `ui/theme/Theme.kt`（`darkColorScheme` → `lightColorScheme`，primary/accent 映射为绿色；`OverlayTheme` 可移除——悬浮窗已是原生 View，该函数为 V1 遗留死代码）
+- `notification/NotificationHelper.kt`（增加 `.setColor(R.color.overlay_accent)`，强调色→绿）
+- `ui/overlay/OverlayGeometry.kt`（折叠宽参数化 32→56dp，面板宽参数化 130→240dp，新增 `PANEL_WIDTH_DP` / `COLLAPSED_WIDTH_DP` 常量）
 
 **删除**：
 - `res/layout/overlay_handle.xml`（被气泡取代，避免死代码）
 
-**不动**：启动器图标、手势引擎（`GestureEngine`/`SpeedCurve`/`ScrollOrchestrator`）、`data/` 全部、DataStore key。
+**不动**：启动器图标、手势引擎（`GestureEngine`/`SpeedCurve`/`ScrollOrchestrator`）、`data/` 全部、DataStore key、`FloatingWindowController.kt`（flags 逻辑已兼容气泡折叠态——Collapsed 态不带 `FLAG_WATCH_OUTSIDE_TOUCH`，无需改动）。
 
 ---
 
@@ -213,6 +225,9 @@ overlay_warning      #D98324    overlay_warning_soft #FBEFD9   (琥珀：已暂�
 | 浅色对比度不足 | 实现后核对绿/琥珀在浅底上的可读性 |
 | V2 Phase 2 内存收益丢失 | 仍原生 View，不回 Compose；收益保留 |
 | 改动面大、难 revert | 纯 UI 层改造，引擎/数据零影响，可整体 revert |
+| 小屏 2×2 网格触控精确性 | 240dp 宽下每格约 110×48dp，展开迷你 Slider 后须确保 thumb 触控区 ≥48dp；**5 寸/720p 真机验证** |
+| ⚙ 设置子面板溢出屏幕 | 面板贴底时子面板展开可能越界；`repositionToBounds` 在子面板可见时须重新计算面板高度并自动上推 |
+| 气泡角标高频 relayout | `BubbleView.setText()` 前做 `currentText != newText` 短路判断，避免 0.6次/秒的无意义 layout pass |
 
 ---
 
@@ -221,8 +236,11 @@ overlay_warning      #D98324    overlay_warning_soft #FBEFD9   (琥珀：已暂�
 1. 展开态面板为浅色/绿、240dp、含头部/状态胶囊/大号计数/2×2 网格/per-app/操作栏，布局与上方 wireframe 一致。
 2. 点速度/间隔/距离格 → 展开内联迷你滑块精调；松开后档位文本正确反映连续值；方向格点一下 ↑↔↓。
 3. 折叠态为 56dp 气泡 + 计数角标，吸附最近边缘且完全可见；运行时角标实时跳动；点气泡展开。
-4. ⚙ 打开设置子面板：预设单选高亮 + 忘记当前 App 可用。
+4. ⚙ 打开设置子面板：预设单选高亮 + 忘记当前 App 可用；子面板展开/收起有过渡动画。
 5. 主按钮：运行=中性描边"暂停滑动"，暂停=绿色实心"开始滑动"；状态胶囊同步绿/琥珀。
-6. MainActivity 与通知强调色为浅色/绿，视觉与悬浮窗一致。
+6. MainActivity 与通知强调色为浅色/绿，视觉与悬浮窗一致；通知 `setColor()` 生效。
 7. `./gradlew test` 全绿（含新增 `ParamStepsTest`/`BadgeFormatterTest` 与更新的 `OverlayGeometryTest`）。
 8. 手势引擎、预设、per-app、统计行为与改造前**逐项一致**（仅 UI 变）。
+9. 5 寸/720p 小屏设备上 2×2 网格格子可点击、展开 Slider 可正常拖动、不被面板拖拽抢夺。
+10. 锁屏恢复后气泡角标数值正确，面板展开后计数与统计一致。
+11. 面板拖拽到屏幕边缘后吸附，随后旋转屏幕不越界（`repositionToBounds` 回调正常工作）。
