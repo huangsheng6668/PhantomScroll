@@ -2,7 +2,9 @@
 
 package com.phantom.scroll.data
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -10,9 +12,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Single source of truth for all scroll settings, per-app profiles, stats and runtime flags.
@@ -26,7 +30,13 @@ import kotlinx.coroutines.launch
  */
 class SettingsRepository(
     private val store: ProfileStore,
-    scope: CoroutineScope
+    scope: CoroutineScope,
+    /**
+     * Dispatcher used for DataStore disk I/O and the debounce suspension/resume of the
+     * persistence collectors. Defaults to [Dispatchers.IO] so high-frequency stat mutations
+     * (one per swipe) never touch the main thread. Injectable for tests.
+     */
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     // ---- editable global defaults ----
     private val _global = MutableStateFlow(ScrollSettings.DEFAULT)
@@ -76,29 +86,49 @@ class SettingsRepository(
     init {
         // Async load (DataStore is async I/O) — backfill defaults once read completes.
         scope.launch {
-            _global.value = store.loadGlobal()
-            _profiles.value = store.loadProfiles()
-            _perAppEnabled.value = store.loadPerAppEnabled()
-            _stats.value = store.loadStats()
+            // Initial load reads from disk — run on the IO dispatcher, not the main thread.
+            val (g, p, enabled, s) = withContext(ioDispatcher) {
+                Quad(store.loadGlobal(), store.loadProfiles(), store.loadPerAppEnabled(), store.loadStats())
+            }
+            _global.value = g
+            _profiles.value = p
+            _perAppEnabled.value = enabled
+            _stats.value = s
 
             // Start persistence collectors AFTER the initial load completes.
             // drop(1) filters out the just-loaded values, collecting subsequent mutations only,
             // which avoids a redundant startup write-back. The collectors are long-lived
             // (infinite collect) and are children of [scope], so they are cancelled together
             // with the repo's owner scope (e.g. serviceScope in PhantomScrollService).
+            //
+            // Each collector runs its debounce suspension/resume AND the DataStore write on
+            // [ioDispatcher] (flowOn upstream + withContext at the terminal), so the per-swipe
+            // stat churn never occupies the main thread.
             launch {
-                _global.drop(1).debounce(PERSIST_DEBOUNCE_MS).collect { store.saveGlobal(it) }
+                _global.drop(1).debounce(PERSIST_DEBOUNCE_MS).flowOn(ioDispatcher)
+                    .collect { withContext(ioDispatcher) { store.saveGlobal(it) } }
             }
             launch {
-                _profiles.drop(1).debounce(PERSIST_DEBOUNCE_MS).collect { store.saveAllProfiles(it) }
+                _profiles.drop(1).debounce(PERSIST_DEBOUNCE_MS).flowOn(ioDispatcher)
+                    .collect { withContext(ioDispatcher) { store.saveAllProfiles(it) } }
             }
             launch {
-                _perAppEnabled.drop(1).debounce(PERSIST_DEBOUNCE_MS).collect { store.savePerAppEnabled(it) }
+                _perAppEnabled.drop(1).debounce(PERSIST_DEBOUNCE_MS).flowOn(ioDispatcher)
+                    .collect { withContext(ioDispatcher) { store.savePerAppEnabled(it) } }
             }
             launch {
-                _stats.drop(1).debounce(PERSIST_DEBOUNCE_MS).collect { store.saveStats(it) }
+                _stats.drop(1).debounce(PERSIST_DEBOUNCE_MS).flowOn(ioDispatcher)
+                    .collect { withContext(ioDispatcher) { store.saveStats(it) } }
             }
         }
+    }
+
+    /** Local 4-tuple (kotlin has no standard Quad) used only to load in one IO hop. */
+    private class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D) {
+        operator fun component1() = a
+        operator fun component2() = b
+        operator fun component3() = c
+        operator fun component4() = d
     }
 
     // ---- mutations ----

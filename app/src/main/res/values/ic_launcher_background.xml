@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Background fill for the adaptive launcher icon. Deep near-black matches the app's
+         dark theme (DarkBackground) so the home-screen icon reads as part of the brand. -->
+    <color name="ic_launcher_background">#FF1E1E24</color>
+</resources>

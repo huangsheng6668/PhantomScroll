@@ -1,5 +1,6 @@
 package com.phantom.scroll.data
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
@@ -11,6 +12,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class SettingsRepositoryTest {
 
     private fun TestScope.repoWith(store: FakeProfileStore): SettingsRepository {
@@ -19,8 +21,15 @@ class SettingsRepositoryTest {
         // debounces via the shared dispatcher, while the long-lived collectors (and the eager
         // stateIn sharing) are NOT children of the TestScope — so runTest can finalize instead
         // of hanging on never-completing infinite collects.
+        //
+        // ioDispatcher is injected as the same TestDispatcher so the IO-bound load/persist path
+        // also advances under virtual time (a real Dispatchers.IO would escape runTest's clock).
         val repoScope = CoroutineScope(coroutineContext + Job())
-        return SettingsRepository(store, repoScope).also { advanceUntilIdle() }
+        val testDispatcher = checkNotNull(coroutineContext[CoroutineDispatcher]) {
+            "TestScope must carry a CoroutineDispatcher"
+        }
+        return SettingsRepository(store, repoScope, ioDispatcher = testDispatcher)
+            .also { advanceUntilIdle() }
     }
 
     @Test

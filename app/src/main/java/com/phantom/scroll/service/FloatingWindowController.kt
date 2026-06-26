@@ -141,12 +141,18 @@ class FloatingWindowController(
     private fun updateLayoutParamsForState(state: PanelState) {
         val view = floatingView ?: return
         val params = floatingParams ?: return
+        // FLAG_NOT_TOUCH_MODAL is kept in EVERY state: it lets touches outside the overlay's
+        // bounds pass through to the reading app underneath. Dropping it in Collapsed state
+        // (the old behaviour) made the ~20dp bubble window capture the whole screen's touches,
+        // blocking the underlying app — a serious usability regression while reading.
         var targetFlags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+        // FLAG_WATCH_OUTSIDE_TOUCH is only needed in Expanded state, where ACTION_OUTSIDE drives
+        // the "tap outside → collapse to bubble" affordance. In Collapsed/Snapping there's nothing
+        // to collapse, so omitting it avoids needless outside-touch delivery.
         if (state == PanelState.Expanded) {
-            targetFlags = targetFlags or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+            targetFlags = targetFlags or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
         }
         if (params.flags != targetFlags) {
             params.flags = targetFlags

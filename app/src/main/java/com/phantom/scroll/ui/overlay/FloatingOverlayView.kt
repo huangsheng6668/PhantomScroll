@@ -89,6 +89,29 @@ class FloatingOverlayView @JvmOverloads constructor(
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private var snapAnimator: ValueAnimator? = null
     private var applyingFromFlow = false
+    /**
+     * Reusable scratch array for [View.getLocationOnScreen], avoiding a per-DOWN `IntArray(2)`
+     * allocation on the UI thread during dragging.
+     */
+    private val tmpLocation = IntArray(2)
+    /**
+     * Lazily-populated list of the *fixed* interactive children (everything except the
+     * ParamCellView sliders, which are only interactive while expanded). Built once after
+     * [init] resolves all findViewByIds, then read on every ACTION_DOWN without rebuilding.
+     */
+    private val fixedInteractive: List<View> by lazy {
+        listOf(directionCell, toggleBtn, resetBtn, foldButton, settingsButton, perAppSwitch, forgetAppBtn)
+    }
+    /**
+     * Named Runnable posted after a snap finishes so we can [removeCallbacks] it on detach.
+     * An anonymous lambda could not be cancelled and would keep running (holding a reference to
+     * this view) for ~270ms after the window is removed — a textbook overlay leak.
+     */
+    private val snapCompletionRunnable = Runnable {
+        if (panelStateFlow?.value == PanelState.Snapping) {
+            panelStateFlow?.value = PanelState.Collapsed
+        }
+    }
 
     private val density get() = resources.displayMetrics.density
     private fun panelWidthPx() = (OverlayGeometry.PANEL_WIDTH_DP * density).toInt()
@@ -198,6 +221,11 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     override fun onDetachedFromWindow() {
+        // Cancel the snap animation and any pending completion callback so the animator /
+        // handler queue don't keep this view alive after WindowManager.removeView().
+        snapAnimator?.cancel()
+        snapAnimator = null
+        removeCallbacks(snapCompletionRunnable)
         collectJob?.cancel()
         scope.cancel()
         super.onDetachedFromWindow()
@@ -343,10 +371,9 @@ class FloatingOverlayView @JvmOverloads constructor(
 
     private fun isTouchInsideView(ev: MotionEvent, view: View): Boolean {
         if (view.visibility != VISIBLE) return false
-        val loc = IntArray(2)
-        view.getLocationOnScreen(loc)
-        return ev.rawX >= loc[0] && ev.rawX <= loc[0] + view.width &&
-               ev.rawY >= loc[1] && ev.rawY <= loc[1] + view.height
+        view.getLocationOnScreen(tmpLocation)
+        return ev.rawX >= tmpLocation[0] && ev.rawX <= tmpLocation[0] + view.width &&
+               ev.rawY >= tmpLocation[1] && ev.rawY <= tmpLocation[1] + view.height
     }
 
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
@@ -355,14 +382,20 @@ class FloatingOverlayView @JvmOverloads constructor(
             downRawX = ev.rawX; downRawY = ev.rawY
             lastRawX = ev.rawX; lastRawY = ev.rawY
             dragging = false
-            // interactive children: expanded sliders + direction cell + buttons + switch + settings btn
-            val expandedSliders = listOf(cellSpeed, cellInterval, cellDistance)
-                .filter { it.isExpanded }.map { it.slider }
-            val interactive = expandedSliders + listOf(
-                directionCell, toggleBtn, resetBtn, foldButton, settingsButton,
-                perAppSwitch, forgetAppBtn
-            )
-            disallowIntercept = interactive.any { isTouchInsideView(ev, it) }
+            // Interactive children = fixed set (cached) + any currently-expanded slider.
+            // Only the expanded sliders are dynamic, so we keep that tiny per-DOWN filter and
+            // reuse the cached [fixedInteractive] list instead of allocating a fresh list each time.
+            val expandedSlider = when {
+                cellSpeed.isExpanded -> cellSpeed.slider
+                cellInterval.isExpanded -> cellInterval.slider
+                cellDistance.isExpanded -> cellDistance.slider
+                else -> null
+            }
+            disallowIntercept = if (expandedSlider != null && isTouchInsideView(ev, expandedSlider)) {
+                true
+            } else {
+                fixedInteractive.any { isTouchInsideView(ev, it) }
+            }
         }
         if (disallowIntercept) return false
         when (ev.actionMasked) {
@@ -436,6 +469,6 @@ class FloatingOverlayView @JvmOverloads constructor(
             }
         }
         snapAnimator?.start()
-        postDelayed({ if (flow.value == PanelState.Snapping) flow.value = PanelState.Collapsed }, 270)
+        postDelayed(snapCompletionRunnable, 270)
     }
 }

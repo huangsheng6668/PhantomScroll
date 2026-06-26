@@ -1,12 +1,18 @@
 package com.phantom.scroll.ui.screen
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.text.TextUtils
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,9 +46,11 @@ import com.phantom.scroll.ui.theme.*
 data class PermissionStatus(
     val overlayGranted: Boolean,
     val accessibilityEnabled: Boolean,
-    val batteryOptimizationIgnored: Boolean
+    val batteryOptimizationIgnored: Boolean,
+    val notificationGranted: Boolean
 ) {
-    val allGranted: Boolean get() = overlayGranted && accessibilityEnabled && batteryOptimizationIgnored
+    val allGranted: Boolean get() =
+        overlayGranted && accessibilityEnabled && batteryOptimizationIgnored && notificationGranted
 }
 
 @Composable
@@ -51,6 +59,14 @@ fun MainScreen() {
     var isOverlayGranted by remember { mutableStateOf(false) }
     var isAccessibilityEnabled by remember { mutableStateOf(false) }
     var isBatteryOptimizationIgnored by remember { mutableStateOf(false) }
+    var isNotificationGranted by remember { mutableStateOf(false) }
+
+    // Runtime notification permission (Android 13+). On older versions it's granted at install.
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        isNotificationGranted = granted || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+    }
 
     // Refresh permission status
     fun checkPermissions() {
@@ -58,6 +74,7 @@ fun MainScreen() {
         isAccessibilityEnabled = isAccessibilityServiceEnabled(context)
         val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         isBatteryOptimizationIgnored = pm.isIgnoringBatteryOptimizations(context.packageName)
+        isNotificationGranted = isNotificationPermissionGranted(context)
     }
 
     // Auto-refresh permissions on application resume
@@ -86,7 +103,9 @@ fun MainScreen() {
     ) {
         // Centralize the three permission states into one stable snapshot so the bottom
         // button reads a single value (status.allGranted) instead of three independent states.
-        val status = PermissionStatus(isOverlayGranted, isAccessibilityEnabled, isBatteryOptimizationIgnored)
+        val status = PermissionStatus(
+            isOverlayGranted, isAccessibilityEnabled, isBatteryOptimizationIgnored, isNotificationGranted
+        )
 
         Spacer(modifier = Modifier.height(40.dp))
 
@@ -184,6 +203,32 @@ fun MainScreen() {
                             context.startActivity(intent)
                         } catch (e: Exception) {
                             android.widget.Toast.makeText(context, "无法直接跳转，请在系统设置中手动开启“无限制”或忽略电池优化", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                )
+
+                HorizontalDivider(
+                    color = TextTertiary.copy(alpha = 0.3f),
+                    modifier = Modifier.padding(vertical = 14.dp)
+                )
+
+                // 4. Notification permission (Android 13+). Required for the service notification
+                //    (toggle/stop controls) to be visible at all — without it showNotification is
+                //    silently ignored by the system.
+                PermissionItem(
+                    title = "通知权限",
+                    description = "显示服务状态通知，并提供暂停/停止快捷按钮",
+                    isGranted = isNotificationGranted,
+                    onGrantClick = {
+                        // On Android 13+ ask at runtime; on older versions it's already granted.
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            android.widget.Toast.makeText(
+                                context,
+                                "当前系统版本无需单独授予通知权限",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }
                 )
@@ -332,4 +377,15 @@ private fun isAccessibilityServiceEnabled(context: Context): Boolean {
         }
     }
     return false
+}
+
+/**
+ * POST_NOTIFICATIONS is a runtime permission only on Android 13+ (TIRAMISU). On older versions
+ * it is granted at install time, so we report `true` there to avoid a spurious "未授权" state.
+ */
+private fun isNotificationPermissionGranted(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+    return ContextCompat.checkSelfPermission(
+        context, Manifest.permission.POST_NOTIFICATIONS
+    ) == PackageManager.PERMISSION_GRANTED
 }

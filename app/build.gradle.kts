@@ -12,19 +12,26 @@ android {
     namespace = "com.phantom.scroll"
     compileSdk = 35
 
+    // Signing credentials are read ONLY from a local (git-ignored) keystore.properties.
+    // Never hardcode secrets here — they would ship in version control. When the file
+    // is absent (e.g. CI, fresh clone) the release build is left unsigned and must be
+    // signed by an external step; debug falls back to AGP's default debug signing.
     val keystorePropertiesFile = rootProject.file("keystore.properties")
     val keystoreProperties = Properties()
     if (keystorePropertiesFile.exists()) {
         keystoreProperties.load(FileInputStream(keystorePropertiesFile))
     }
+    val hasKeystore = keystorePropertiesFile.exists() &&
+        keystoreProperties.getProperty("key.store.password") != null
 
     signingConfigs {
         create("release") {
-            val storeFilePath = keystoreProperties.getProperty("key.store.file")
-            storeFile = if (storeFilePath != null) file(storeFilePath) else file("phantomscroll.jks")
-            storePassword = keystoreProperties.getProperty("key.store.password") ?: "phantom123"
-            keyAlias = keystoreProperties.getProperty("key.alias") ?: "phantomscroll"
-            keyPassword = keystoreProperties.getProperty("key.password") ?: "phantom123"
+            if (hasKeystore) {
+                storeFile = file(keystoreProperties.getProperty("key.store.file"))
+                storePassword = keystoreProperties.getProperty("key.store.password")
+                keyAlias = keystoreProperties.getProperty("key.alias")
+                keyPassword = keystoreProperties.getProperty("key.password")
+            }
         }
     }
 
@@ -32,8 +39,8 @@ android {
         applicationId = "com.phantom.scroll"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -49,11 +56,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            // Release is signed only when a local keystore.properties is present.
+            if (hasKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
-        debug {
-            signingConfig = signingConfigs.getByName("release")
-        }
+        // debug uses AGP's default debug signing — no release secrets in debug builds.
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

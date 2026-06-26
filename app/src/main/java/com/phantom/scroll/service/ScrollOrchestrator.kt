@@ -31,7 +31,17 @@ import kotlin.coroutines.resume
 class ScrollOrchestrator(
     private val service: AccessibilityService,
     private val repository: SettingsRepository,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    /**
+     * Off-main dispatcher for path/noise computation (spec §3). Defaults to
+     * [Dispatchers.Default]; injectable so tests can drive timing deterministically.
+     */
+    private val defaultDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    /**
+     * Dispatcher used for [AccessibilityService.dispatchGesture] (must be the main thread).
+     * Defaults to [Dispatchers.Main.immediate]; injectable for tests.
+     */
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
 ) {
     private val TAG = "ScrollOrchestrator"
     private val gestureEngine = GestureEngine()
@@ -54,12 +64,42 @@ class ScrollOrchestrator(
      */
     private var consecutiveCancellation = 0
 
+    /**
+     * `true` while a dispatched gesture has not yet resolved (completed/cancelled/rejected).
+     * Guards against [scrolling-loop] overlap: if a previous [withTimeoutOrNull] timed out,
+     * the underlying system gesture keeps running and its callback can still arrive late —
+     * this flag lets the loop wait for it before dispatching again (preventing two fingers
+     * on screen at once) and lets late callbacks self-cancel without touching degradation
+     * counters (see [handleCancellation]).
+     */
+    @Volatile
+    private var gestureInFlight = false
+
     fun start() {
         loopJob = scope.launch {
             while (isActive) {
                 try {
                     repository.isRunning.first { it }
                     if (!repository.isRunning.value) continue
+
+                    // Guard against gesture overlap: if the previous dispatch's callback has not
+                    // arrived yet (e.g. it timed out and the system gesture is still animating),
+                    // wait briefly rather than firing a second gesture on top of the first.
+                    if (gestureInFlight) {
+                        PhantomLog.w(TAG, "Previous gesture still in flight; waiting before next dispatch.")
+                        var waits = 0
+                        while (gestureInFlight && isActive && waits < OVERLAP_WAIT_PROBES) {
+                            delay(OVERLAP_WAIT_STEP_MS)
+                            waits++
+                        }
+                        // If it genuinely never resolved, abandon this iteration and let the next
+                        // loop tick retry rather than stack gestures.
+                        if (gestureInFlight) {
+                            PhantomLog.w(TAG, "Gesture never resolved; skipping iteration.")
+                            delay(500)
+                            continue
+                        }
+                    }
 
                     val screenWidth = repository.screenWidth.value
                     val screenHeight = repository.screenHeight.value
@@ -72,8 +112,12 @@ class ScrollOrchestrator(
                         continue
                     }
 
-                    val noiseInterval = gestureEngine.addBioNoise(settings.interval.toFloat(), 0.08f)
-                        .toLong().coerceIn(MIN_INTERVAL_MS, MAX_INTERVAL_MS)
+                    // Noise computation on the off-main dispatcher per spec §3 (gaussian sampling
+                    // belongs with the rest of the trajectory math), then clamp to slider bounds.
+                    val noiseInterval = withContext(defaultDispatcher) {
+                        gestureEngine.addBioNoise(settings.interval.toFloat(), 0.08f)
+                            .toLong().coerceIn(MIN_INTERVAL_MS, MAX_INTERVAL_MS)
+                    }
                     // spec §3.2: count one successful swipe + accumulate the wait as elapsed time.
                     repository.incrementStats(swipeDelta = 1, elapsedDeltaMs = noiseInterval)
                     delay(noiseInterval)
@@ -105,7 +149,7 @@ class ScrollOrchestrator(
         val totalDurationHint: Long
         val buildGesture: () -> GestureDescription
         if (degradedMode) {
-            val plan: GesturePlan = withContext(Dispatchers.Default) {
+            val plan: GesturePlan = withContext(defaultDispatcher) {
                 gestureEngine.generateGesturePlan(
                     screenWidth, screenHeight,
                     settings.distanceRatio, settings.duration, settings.direction
@@ -125,7 +169,7 @@ class ScrollOrchestrator(
                     .build()
             }
         } else {
-            val plan: ContinuousPlan = withContext(Dispatchers.Default) {
+            val plan: ContinuousPlan = withContext(defaultDispatcher) {
                 gestureEngine.generateContinuousPlan(
                     screenWidth, screenHeight,
                     settings.distanceRatio, settings.duration, settings.direction
@@ -141,9 +185,10 @@ class ScrollOrchestrator(
         }
 
         // 2. Dispatch on the main thread (dispatchGesture requires it).
-        return withContext(Dispatchers.Main.immediate) {
+        return withContext(mainDispatcher) {
             if (!isActive || !repository.isRunning.value) return@withContext false
             val timeoutMs = totalDurationHint + GESTURE_TIMEOUT_SLACK_MS
+            gestureInFlight = true
             withTimeoutOrNull(timeoutMs) {
                 suspendCancellableCoroutine<Boolean> { cont ->
                     val gesture = buildGesture()
@@ -151,6 +196,7 @@ class ScrollOrchestrator(
                         gesture,
                         object : AccessibilityService.GestureResultCallback() {
                             override fun onCompleted(g: GestureDescription?) {
+                                gestureInFlight = false
                                 failurePolicy.recordSuccess()
                                 consecutiveCancellation = 0
                                 if (cont.isActive) cont.resume(true)
@@ -165,12 +211,16 @@ class ScrollOrchestrator(
 
                     if (!dispatched) {
                         // dispatchGesture rejected synchronously — treat as ordinary failure.
+                        gestureInFlight = false
                         if (cont.isActive) cont.resume(false)
                         handleFailure()
                     }
                 }
             } ?: run {
-                // Timed out with no callback at all — treat as ordinary failure.
+                // Timed out with no callback at all. The system gesture may still be animating,
+                // so leave gestureInFlight=true: the loop's overlap guard will wait for the late
+                // callback (which clears the flag) before dispatching again.
+                PhantomLog.w(TAG, "Gesture dispatch timed out; leaving in-flight flag set.")
                 handleFailure()
                 false
             }
@@ -184,6 +234,15 @@ class ScrollOrchestrator(
      * degraded mode every cancellation is an ordinary failure (no more special-casing).
      */
     private fun handleCancellation(cont: CancellableContinuation<Boolean>) {
+        // Always clear the in-flight flag: a cancellation is a terminal resolution.
+        gestureInFlight = false
+        // Late callback guard: if the continuation is no longer active, the loop already moved
+        // on (typically via a timeout). Counting such a residual cancellation would wrongly
+        // bump the degradation ladder, so just log and return.
+        if (!cont.isActive) {
+            PhantomLog.w(TAG, "Late gesture cancellation ignored (continuation already resolved).")
+            return
+        }
         if (degradedMode) {
             if (cont.isActive) cont.resume(false)
             handleFailure()
@@ -235,6 +294,14 @@ class ScrollOrchestrator(
 
         /** Extra time allowed beyond the gesture's own duration before declaring timeout. */
         const val GESTURE_TIMEOUT_SLACK_MS = 2000L
+
+        /**
+         * When the previous gesture's callback has not arrived (overlap guard), poll this many
+         * times for [OVERLAP_WAIT_STEP_MS] before giving up the iteration. 40 × 50ms = 2s,
+         * matching the timeout slack — enough for a genuinely-late callback to land.
+         */
+        const val OVERLAP_WAIT_PROBES = 40
+        const val OVERLAP_WAIT_STEP_MS = 50L
 
         /**
          * Inter-swipe interval bounds. Aligned with the overlay slider's

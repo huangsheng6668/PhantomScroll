@@ -22,7 +22,18 @@ import kotlinx.coroutines.flow.collectLatest
 class PhantomScrollService : AccessibilityService() {
 
     private val TAG = "PhantomScrollService"
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /**
+     * Catches otherwise-unhandled exceptions from long-lived collectors (notification refresh,
+     * DataStore persistence, panelState flag updates). SupervisorJob already stops a failing
+     * child from cancelling its siblings; this handler makes the failure observable (logged)
+     * instead of letting the child die silently. Does not apply to dispatchGesture callbacks,
+     * which run on their own binder thread outside this scope.
+     */
+    private val exceptionHandler = CoroutineExceptionHandler { _, e ->
+        PhantomLog.e(TAG, "Uncaught coroutine exception in serviceScope", e)
+    }
+    private val serviceScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + exceptionHandler)
 
     val repository by lazy { SettingsRepository(DataStoreProfileStore(this), serviceScope) }
 

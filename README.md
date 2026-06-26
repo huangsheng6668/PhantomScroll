@@ -92,7 +92,7 @@ baselineprofile/                         # 【V2 Phase 4】Baseline Profile 生�
     ├── BaselineProfileGenerator.kt      # 生成 MainActivity 冷启动 profile
     └── StartupBenchmark.kt              # Macrobenchmark：Profile 前/后冷启动对比
 
-app/src/test/java/com/phantom/scroll/    # 纯逻辑 JVM 单元测试（72 个，无 Robolectric）
+app/src/test/java/com/phantom/scroll/    # 纯逻辑 JVM 单元测试（85 个，无 Robolectric）
 ├── data/       (SettingsRepository / ScrollSettings / MigrationMapper / ProfileKeyParsing)
 ├── gesture/    (GestureEngine 含方向/起点随机/X收敛/距离完整性 + SpeedCurve 缓动/采样)
 ├── service/    (FailurePolicy / ScreenStateCoordinator / PerAppDetector)
@@ -143,7 +143,7 @@ Android 15 强制启用了沉浸式 Edge-to-Edge 视效。为此：
 ```bash
 ./gradlew test
 ```
-该命令会测试 **72 个纯逻辑 JVM 单元测试**（无 Robolectric），覆盖：
+该命令会测试 **85 个纯逻辑 JVM 单元测试**（无 Robolectric），覆盖：
 - **`GestureEngineTest`**：滑动点落在合法屏幕安全区；极短/极长时间正确 Coerce 进 `[150,1500]`ms；Bio-Noise 抖动差异性；**UP/DOWN 方向翻转**及距离镜像；**起点 Y 随机化**；**endX 贴近 startX**（横向漂移收敛）；**高 distanceRatio 下完整距离不截断**；**加速/减速比例非对称**。
 - **`SpeedCurveTest`**：ease-out-cubic 端点与单调性；时间→进度映射在加速边界命中 `accelDistanceRatio` 且加速段速度严格大于减速段；贝塞尔重采样点数与端点保持；jitter 零抖动时落在解析曲线上、有抖动时约束在 ±2σ 内。
 - **`SettingsRepositoryTest`**：activeSettings 回落/切换、profile 增删、stats 累加/重置、`updateActive`/`forgetActiveProfile` 派生。
@@ -167,3 +167,19 @@ Android 15 强制启用了沉浸式 Edge-to-Edge 视效。为此：
 2. **无障碍服务权限 (BIND_ACCESSIBILITY_SERVICE)**：用于注入模拟滑动事件。声明了 `canRetrieveWindowContent="false"`，绝不读取任何屏幕隐私。
 3. **通知权限 (POST_NOTIFICATIONS)**：用于显示通知栏快捷按钮。
 4. **忽略电池优化**：防止系统在后台强杀无障碍进程。本项目使用安全规整的系统设置 intent (`ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`) 引导用户手动更改，完全符合 Google Play 应用商店规定。
+
+---
+
+## 🔧 依赖升级路线（待办）
+
+`gradle/libs.versions.toml` 中的依赖停留在 2024 年末版本。升级时务必注意版本矩阵耦合（AGP↔Gradle wrapper↔Kotlin↔Compose Compiler），并跑 `./gradlew testDebugUnitTest assembleDebug lintDebug` 全绿后再合并。建议目标：
+
+| 依赖 | 当前 | 建议目标 | 注意 |
+|------|------|----------|------|
+| AGP | 8.7.3 | 8.7.x 末版（已最新）→ 视需要升 8.9+ | 跨大版本需同步升级 Gradle wrapper |
+| Kotlin | 2.0.21 | 2.1.x / 2.2.x | Compose Compiler 插件版本必须与 Kotlin 一致 |
+| Compose BOM | 2024.12.01 | 最新 BOM | 跟随 Kotlin 版本 |
+| kotlinx-coroutines | 1.9.0 | 1.10.2 | 1.10.x 目标 Kotlin 2.2.x，降级使用前验证二进制兼容 |
+| Gradle wrapper | 8.9 | 8.13+ | 与 AGP 版本要求对齐 |
+| lifecycle / core-ktx / datastore | 2.8.7 / 1.13.1 / 1.1.1 | 各自最新稳定 | 纯 AndroidX，升级风险低 |
+
