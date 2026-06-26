@@ -5,9 +5,9 @@ import android.accessibilityservice.GestureDescription
 import android.widget.Toast
 import com.phantom.scroll.data.ScrollSettings
 import com.phantom.scroll.data.SettingsRepository
+import com.phantom.scroll.gesture.ContinuousPlan
 import com.phantom.scroll.gesture.GestureEngine
 import com.phantom.scroll.gesture.GesturePlan
-import com.phantom.scroll.gesture.SinglePathResult
 import com.phantom.scroll.util.PhantomLog
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
@@ -18,11 +18,15 @@ import kotlin.coroutines.resume
  * Reads effective settings from [SettingsRepository] and delegates consecutive-failure
  * accounting to a [FailurePolicy].
  *
- * Gesture dispatch uses a **two-phase continuous-stroke** plan (acceleration + deceleration)
- * to produce the human-like asymmetric speed curve. Some ROMs mishandle
- * `StrokeDescription.continuedStroke`; to stay robust we track cancellation patterns and
- * automatically fall back to a single-path (constant-speed) plan — without losing the
- * bezier sampling jitter or randomized start point. See [degradedMode].
+ * Gesture dispatch uses a **single continuous stroke** whose internal point spacing
+ * encodes a human-like accelerate-then-gently-decelerate profile (see
+ * [com.phantom.scroll.gesture.GestureEngine.generateContinuousPlan]). Encoding the
+ * speed curve *inside one path* — rather than chaining two `continueStroke` segments —
+ * eliminates both the seam micro-pause and the slow-drag tail that caused ad/诱导
+ * buttons to be misread as taps. Some exotic ROMs mishandle even a single complex
+ * path; we track cancellation patterns and fall back to the legacy two-segment plan,
+ * then to a constant-speed single path, without losing the bezier jitter or the
+ * randomized start point. See [degradedMode].
  */
 class ScrollOrchestrator(
     private val service: AccessibilityService,
@@ -35,18 +39,18 @@ class ScrollOrchestrator(
     private var loopJob: Job? = null
 
     /**
-     * `true` once continuous-stroke chaining has been observed to fail repeatedly on
-     * this device. While set, [buildAndDispatch] emits a single-path stroke instead of
-     * the two-phase plan. Deliberately *not* auto-cleared on success to avoid flapping;
-     * a service restart restores the fast path.
+     * `true` once the preferred single continuous stroke has been observed to fail
+     * repeatedly on this device. While set, [buildAndDispatch] emits the legacy
+     * two-segment plan instead. Deliberately *not* auto-cleared on success to avoid
+     * flapping; a service restart restores the fast path.
      */
     @Volatile
     private var degradedMode = false
 
     /**
-     * Consecutive cancellation count while still on the fast (two-phase) path. Crossing
-     * [DEGRADATION_THRESHOLD] flips [degradedMode]. Reset on any completion or once
-     * degradation engages.
+     * Consecutive cancellation count while still on the preferred single-stroke path.
+     * Crossing [DEGRADATION_THRESHOLD] flips [degradedMode]. Reset on any completion
+     * or once degradation engages.
      */
     private var consecutiveCancellation = 0
 
@@ -86,7 +90,7 @@ class ScrollOrchestrator(
 
     /**
      * Computes (off-main) and dispatches (on-main) a single swipe, returning `true`
-     * only on a completed gesture. Handles the two-phase → degraded single-path
+     * only on a completed gesture. Handles the single-stroke → legacy two-segment
      * transition transparently.
      */
     private suspend fun dispatchSwipe(
@@ -95,21 +99,12 @@ class ScrollOrchestrator(
         settings: ScrollSettings
     ): Boolean {
         // 1. Generate the path off the main thread.
+        //    Preferred: a single continuous stroke encoding the speed curve via
+        //    non-uniform point spacing — no seam, no slow-drag tail, best ROM support.
+        //    Fallback (degraded): the legacy two-segment continueStroke plan.
         val totalDurationHint: Long
         val buildGesture: () -> GestureDescription
         if (degradedMode) {
-            val single: SinglePathResult = withContext(Dispatchers.Default) {
-                gestureEngine.generateSinglePath(
-                    screenWidth, screenHeight,
-                    settings.distanceRatio, settings.duration, settings.direction
-                )
-            }
-            totalDurationHint = single.duration
-            buildGesture = {
-                val stroke = GestureDescription.StrokeDescription(single.path, 0L, single.duration)
-                GestureDescription.Builder().addStroke(stroke).build()
-            }
-        } else {
             val plan: GesturePlan = withContext(Dispatchers.Default) {
                 gestureEngine.generateGesturePlan(
                     screenWidth, screenHeight,
@@ -118,17 +113,30 @@ class ScrollOrchestrator(
             }
             totalDurationHint = plan.accelDuration + plan.decelDuration
             buildGesture = {
-                // Two continuous strokes: the second continues the first, so Android
-                // treats them as one finger with a speed change at the seam.
+                // Legacy two continuous strokes: the second continues the first, so
+                // Android treats them as one finger with a speed change at the seam.
                 val accel = GestureDescription.StrokeDescription(
                     plan.accelPath, 0L, plan.accelDuration, true /* willContinue */
                 )
-                // decel is the terminal segment → willContinue = false.
                 val decel = accel.continueStroke(plan.decelPath, 0L, plan.decelDuration, false)
                 GestureDescription.Builder()
                     .addStroke(accel)
                     .addStroke(decel)
                     .build()
+            }
+        } else {
+            val plan: ContinuousPlan = withContext(Dispatchers.Default) {
+                gestureEngine.generateContinuousPlan(
+                    screenWidth, screenHeight,
+                    settings.distanceRatio, settings.duration, settings.direction
+                )
+            }
+            totalDurationHint = plan.duration
+            buildGesture = {
+                // One stroke; the accelerate/gentle-decelerate profile lives in the
+                // path's point spacing (see GestureEngine.generateContinuousPlan).
+                val stroke = GestureDescription.StrokeDescription(plan.path, 0L, plan.duration)
+                GestureDescription.Builder().addStroke(stroke).build()
             }
         }
 
@@ -185,7 +193,7 @@ class ScrollOrchestrator(
         if (consecutiveCancellation >= DEGRADATION_THRESHOLD) {
             degradedMode = true
             consecutiveCancellation = 0
-            PhantomLog.w(TAG, "Continuous-stroke cancellations hit threshold → degraded single-path mode.")
+            PhantomLog.w(TAG, "Single-stroke cancellations hit threshold → legacy two-segment mode.")
             Toast.makeText(service, "⚠️ 检测到设备兼容性问题，已切换兼容滑动模式", Toast.LENGTH_SHORT).show()
             // Give the degraded path a fair chance on the next iteration: resume without
             // recording a FailurePolicy miss so we don't double-penalize the transition.

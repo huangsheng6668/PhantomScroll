@@ -28,7 +28,7 @@
   - 当拖拽结束时，计算当前 $X$ 坐标。若超过屏幕宽度的一半，利用 `ValueAnimator` 动画将悬浮窗平滑推至右边缘，反之推至左边缘（250ms 吸附）。
   - 吸附完成后，自动切换为 `Collapsed` 状态：控制面板隐藏，仅在边缘渲染一个高透明度、宽 32dp 的"手柄（Handle）"。
   - 点击或向内滑动该手柄，平滑展开控制面板。
-- **触控拦截守护**：在 parent custom view 中监听 `ACTION_DOWN`，判断如果触摸点落在交互式子视图（如 Slider、Chip 容器 `preset_row`、开关等）的 global bounds 范围内，则将 `disallowIntercept` 设为 true，防止微小位移导致 ViewGroup 拦截事件并取消子视图的点击行为。
+- **触控拦截守护**：在 parent custom view 中监听 `ACTION_DOWN`，判断如果触摸点落在交互式子视图（如 Slider、开关、方向切换、忘记 App 配置按钮等）的 global bounds 范围内，则将 `disallowIntercept` 设为 true，防止微小位移导致 ViewGroup 拦截事件并取消子视图的点击行为。
 
 ## 2. 状态管理与单一真相源 (SettingsRepository & DataStore)
 
@@ -38,7 +38,7 @@
   - `ScrollStats`：保存累计翻页次数与运行时长。
   - `AppProfile`：存储前台特定 App 的定制化设置配置。
 - **双向同步与节流落盘**：
-  - 原生 View 中的 `Slider` 与 Chip 通过观察 Repository 的 `StateFlow` 进行命令式刷新（零重组开销）。
+  - 原生 View 中的 `Slider`、开关等交互控件通过观察 Repository 的 `StateFlow` 进行命令式刷新（零重组开销）。
   - 用户拖动 Slider 改写内存状态立即生效，后台通过协程 Flow `debounce(500ms)` 对 Preferences DataStore 写入节流，杜绝磁盘 I/O 阻塞。
 
 ## 3. 极限性能优化与零 GC 消耗设计 (Coroutines & Object Pooling)
@@ -64,10 +64,6 @@
 
 ## 5. 产品化特性支持
 
-- **场景预设 (Presets)**：内置预设参数：
-  - `小说`：速度 220ms / 间隔 2.3s / 距离 45% / 方向 UP
-  - `漫画`：速度 220ms / 间隔 1.5s / 距离 55% / 方向 UP
-  - `自定义`：显示当前用户调准的 custom 变量；手动拖动任意 Slider 自动切回`自定义`，且支持点击「自定义」Chip 快速恢复先前的自定义数值。
 - **运行统计**：利用协程自动统计并更新已翻页次数与累计分钟，支持点击重置。
 - **按 App 记忆配置 (Per-App)**：前台包名变化检测（支持系统 denylist 过滤与 300ms 快速切换防抖），当开启该功能并调整 Slider 时，自动创建并持久化当前 App 的专属配置 profile；切换回普通应用时自动还原全局默认，长按标签即可忘记该 App 配置。
 

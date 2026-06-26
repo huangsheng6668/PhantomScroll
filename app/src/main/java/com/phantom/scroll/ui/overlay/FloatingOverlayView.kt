@@ -13,8 +13,6 @@ import android.widget.TextView
 import androidx.core.content.res.ResourcesCompat
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.phantom.scroll.R
-import com.phantom.scroll.data.Preset
-import com.phantom.scroll.data.PresetSelection
 import com.phantom.scroll.data.ScrollDirection
 import com.phantom.scroll.data.ScrollSettings
 import com.phantom.scroll.data.ScrollStats
@@ -66,9 +64,6 @@ class FloatingOverlayView @JvmOverloads constructor(
     private val cellDistance: ParamCellView
     private val directionCell: View
     private val directionValue: TextView
-    private val chipNovel: TextView
-    private val chipComic: TextView
-    private val chipCustom: TextView
     private val forgetAppBtn: View
     private val perAppSwitch: MaterialSwitch
     private val perAppLabel: TextView
@@ -122,9 +117,6 @@ class FloatingOverlayView @JvmOverloads constructor(
         cellDistance = findViewById(R.id.param_cell_distance)
         directionCell = findViewById(R.id.direction_cell)
         directionValue = findViewById(R.id.direction_value)
-        chipNovel = findViewById(R.id.chip_novel)
-        chipComic = findViewById(R.id.chip_comic)
-        chipCustom = findViewById(R.id.chip_custom)
         forgetAppBtn = findViewById(R.id.forget_app_btn)
         perAppSwitch = findViewById(R.id.perapp_switch)
         perAppLabel = findViewById(R.id.perapp_label)
@@ -140,9 +132,6 @@ class FloatingOverlayView @JvmOverloads constructor(
         resetBtn.setOnClickListener {
             scope.launch { repository?.resetStats() }
         }
-        chipNovel.setOnClickListener { scope.launch { repository?.applyPreset(Preset.NOVEL) } }
-        chipComic.setOnClickListener { scope.launch { repository?.applyPreset(Preset.COMIC) } }
-        chipCustom.setOnClickListener { scope.launch { repository?.applyCustomPreset() } }
         forgetAppBtn.setOnClickListener {
             scope.launch {
                 repository?.forgetActiveProfile()
@@ -225,7 +214,6 @@ class FloatingOverlayView @JvmOverloads constructor(
                 combine(repo.screenWidth, repo.screenHeight) { w, h -> w to h }
                     .collect { repositionToBounds(it.first, it.second) }
             }
-            launch { repo.selectedPreset.collect { applyPresetSelection(it) } }
             launch { repo.stats.collect { applyStats(it) } }
             launch { repo.perAppEnabled.collect { applyPerAppEnabled(it) } }
             launch { repo.currentPackage.collect { applyCurrentPackage(it) } }
@@ -285,21 +273,6 @@ class FloatingOverlayView @JvmOverloads constructor(
                 ResourcesCompat.getColor(resources, R.color.overlay_accent, null))
             toggleBtn.strokeWidth = 0
             toggleBtn.setTextColor(ResourcesCompat.getColor(resources, R.color.overlay_on_accent, null))
-        }
-    }
-
-    private fun applyPresetSelection(sel: PresetSelection) {
-        val selectedBg = ResourcesCompat.getDrawable(resources, R.drawable.overlay_chip_bg_selected, null)
-        val plainBg = ResourcesCompat.getDrawable(resources, R.drawable.overlay_chip_bg, null)
-        val accent = ResourcesCompat.getColor(resources, R.color.overlay_accent, null)
-        val fg = ResourcesCompat.getColor(resources, R.color.overlay_fg, null)
-        listOf(
-            chipNovel to (sel is PresetSelection.BuiltIn && sel.preset == Preset.NOVEL),
-            chipComic to (sel is PresetSelection.BuiltIn && sel.preset == Preset.COMIC),
-            chipCustom to (sel is PresetSelection.Custom)
-        ).forEach { (chip, on) ->
-            chip.background = if (on) selectedBg else plainBg
-            chip.setTextColor(if (on) accent else fg)
         }
     }
 
@@ -382,12 +355,12 @@ class FloatingOverlayView @JvmOverloads constructor(
             downRawX = ev.rawX; downRawY = ev.rawY
             lastRawX = ev.rawX; lastRawY = ev.rawY
             dragging = false
-            // interactive children: expanded sliders + direction cell + buttons + switch + chips + settings btn
+            // interactive children: expanded sliders + direction cell + buttons + switch + settings btn
             val expandedSliders = listOf(cellSpeed, cellInterval, cellDistance)
                 .filter { it.isExpanded }.map { it.slider }
             val interactive = expandedSliders + listOf(
                 directionCell, toggleBtn, resetBtn, foldButton, settingsButton,
-                perAppSwitch, chipNovel, chipComic, chipCustom, forgetAppBtn
+                perAppSwitch, forgetAppBtn
             )
             disallowIntercept = interactive.any { isTouchInsideView(ev, it) }
         }

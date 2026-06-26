@@ -57,8 +57,6 @@ app/src/main/java/com/phantom/scroll/
 │   ├── ScrollSettings.kt        #   滚动配置（duration/interval/distanceRatio/direction）
 │   ├── ScrollDirection.kt       #   UP / DOWN
 │   ├── AppProfile.kt            #   按 App 的配置覆盖
-│   ├── Preset.kt                #   场景预设（小说/漫画）+ PresetSelection 派生态（自定义）
-│   ├── PresetRegistry.kt        #   纯逻辑：global → 命中预设 / 自定义
 │   ├── ScrollStats.kt           #   运行统计（翻页次数 + 累计时长）
 │   ├── SettingsRepository.kt    #   全局唯一真相源（StateFlow + DataStore 节流写回）
 │   ├── ProfileStore.kt          #   持久化接口
@@ -94,7 +92,7 @@ baselineprofile/                         # 【V2 Phase 4】Baseline Profile 生�
     ├── BaselineProfileGenerator.kt      # 生成 MainActivity 冷启动 profile
     └── StartupBenchmark.kt              # Macrobenchmark：Profile 前/后冷启动对比
 
-app/src/test/java/com/phantom/scroll/    # 纯逻辑 JVM 单元测试（76 个，无 Robolectric）
+app/src/test/java/com/phantom/scroll/    # 纯逻辑 JVM 单元测试（72 个，无 Robolectric）
 ├── data/       (SettingsRepository / ScrollSettings / MigrationMapper / ProfileKeyParsing)
 ├── gesture/    (GestureEngine 含方向/起点随机/X收敛/距离完整性 + SpeedCurve 缓动/采样)
 ├── service/    (FailurePolicy / ScreenStateCoordinator / PerAppDetector)
@@ -109,7 +107,7 @@ V2 对项目做了第二轮架构与性能优化，分四个阶段推进（每�
 
 1. **Phase 1 — 可维护性地基**：引入 `data/` 领域模型与 `SettingsRepository` 单一真相源，持久化解耦为 `ProfileStore` 接口并迁移到 Preferences DataStore（`SharedPreferencesMigration` 自动搬旧 key）；核心循环与状态机纯逻辑抽离（`FailurePolicy` / `ScreenStateCoordinator`）并加单测。**对外行为零变化。**
 2. **Phase 2 — 悬浮窗原生 View 重写**：把悬浮窗从 Compose (`ComposeView`) 重写为原生 View（`FloatingOverlayView` + Material Components），移除阅读时常驻的 Compose 运行时（内存下降）；删除 `FloatingPanel` / `OverlayLifecycleOwner` / `ScrollConfig` 桥接。
-3. **Phase 3 — 产品化功能**：场景预设（小说/漫画/自定义）、运行统计（翻页次数 + 累计分钟，可重置）、滚动方向切换（↑/↓）、按 App 记忆配置（开关可控、自动创建 profile、denylist + 防抖、可忘记）。
+3. **Phase 3 — 产品化功能**：运行统计（翻页次数 + 累计分钟，可重置）、滚动方向切换（↑/↓）、按 App 记忆配置（开关可控、自动创建 profile、denylist + 防抖、可忘记）。
 4. **Phase 4 — 性能收尾**：Baseline Profile（`:baselineprofile` 模块，加速 `MainActivity` 冷启动）+ Compose 编译器稳定性报告 + 热路径零分配复核 + 测量留痕。实测数字见 [spec §4.4.1](docs/superpowers/specs/2026-06-14-phantomscroll-v2-optimization-design.md)。
 
 ---
@@ -145,11 +143,10 @@ Android 15 强制启用了沉浸式 Edge-to-Edge 视效。为此：
 ```bash
 ./gradlew test
 ```
-该命令会测试 **76 个纯逻辑 JVM 单元测试**（无 Robolectric），覆盖：
+该命令会测试 **72 个纯逻辑 JVM 单元测试**（无 Robolectric），覆盖：
 - **`GestureEngineTest`**：滑动点落在合法屏幕安全区；极短/极长时间正确 Coerce 进 `[150,1500]`ms；Bio-Noise 抖动差异性；**UP/DOWN 方向翻转**及距离镜像；**起点 Y 随机化**；**endX 贴近 startX**（横向漂移收敛）；**高 distanceRatio 下完整距离不截断**；**加速/减速比例非对称**。
 - **`SpeedCurveTest`**：ease-out-cubic 端点与单调性；时间→进度映射在加速边界命中 `accelDistanceRatio` 且加速段速度严格大于减速段；贝塞尔重采样点数与端点保持；jitter 零抖动时落在解析曲线上、有抖动时约束在 ±2σ 内。
-- **`SettingsRepositoryTest`**：activeSettings 回落/切换、profile 增删、stats 累加/重置、`applyPreset`/`updateActive`/`forgetActiveProfile`/`selectedPreset` 派生。
-- **`PresetRegistryTest`**：global 命中小说/漫画预设或回落自定义。
+- **`SettingsRepositoryTest`**：activeSettings 回落/切换、profile 增删、stats 累加/重置、`updateActive`/`forgetActiveProfile` 派生。
 - **`PerAppDetectorTest`**：denylist / 去重 / 自身包名过滤 / 300ms 防抖。
 - **`FailurePolicyTest` / `ScreenStateCoordinatorTest` / `OverlayGeometryTest` / `MigrationMapperTest` / `ProfileKeyParsingTest` / `ScrollSettingsTest`**。
 

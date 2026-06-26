@@ -64,6 +64,29 @@ class SinglePathResult(
 )
 
 /**
+ * A **single continuous-stroke** swipe plan — the modern, seam-free way to express a
+ * human-like speed curve (see [GestureEngine.generateContinuousPlan]).
+ *
+ * Unlike [GesturePlan] (two `continueStroke` segments with a velocity discontinuity at
+ * the seam), this dispatches as **one** `StrokeDescription`. The acceleration / gentle-
+ * deceleration profile is encoded *inside the path itself* by non-uniform point spacing
+ * (see [SpeedCurve.resampleByTimeProgress]). This eliminates both misdetection roots at
+ * once: no seam micro-pause, and a [speedFloor] guarantees the trailing finger speed
+ * never drops low enough to be read as a deliberate tap on an ad/诱导 button.
+ *
+ * @property path the single continuous path. **Borrowed reference** — invalidated by
+ *           the next call to [GestureEngine.generateContinuousPlan].
+ * @property duration total stroke duration (ms).
+ * @property speedFloor the normalized minimum trailing speed this plan was built with
+ *           (exposed for unit-test assertions that it matches the requested band).
+ */
+class ContinuousPlan(
+    val path: Path,
+    val duration: Long,
+    val speedFloor: Float
+)
+
+/**
  * Engine producing organic vertical scroll gestures.
  *
  * Caches internal [Path] instances (object pooling) to avoid per-iteration allocation
@@ -77,13 +100,65 @@ class GestureEngine {
     private val reusableAccelPath = Path()
     private val reusableDecelPath = Path()
     private val reusableSinglePath = Path()
+    private val reusableContinuousPath = Path()
     private val random = Random()
 
     /** Minimum absolute number of samples in a single path segment. */
     private val minSegmentSamples = 6
 
     /**
-     * Generates a two-phase [GesturePlan] implementing the asymmetric speed curve.
+     * Generates a [ContinuousPlan]: a **single** stroke whose internal point spacing
+     * encodes a human-like accelerate-then-gently-decelerate profile, with a floored
+     * trailing speed so the finger never dwells slowly across an ad/诱导 button.
+     *
+     * This is the preferred path for [ScrollOrchestrator]: no `continueStroke` seam
+     * (hence no ROM incompatibility from stroke chaining) and no slow-drag tail (hence
+     * no ad misdetection). Heavy math runs on
+     * [kotlinx.coroutines.Dispatchers.Default] (caller's responsibility).
+     *
+     * The trailing-speed floor is chosen from the *post-noise* duration's speed band so
+     * faster swipes keep a higher floor (they cross buttons quickest) while the slow
+     * reading band can relax a little (a long dwell there is intentional, not a tap).
+     */
+    fun generateContinuousPlan(
+        screenWidth: Int,
+        screenHeight: Int,
+        distanceRatio: Float,
+        durationMs: Long,
+        direction: ScrollDirection = ScrollDirection.UP
+    ): ContinuousPlan {
+        val points = calculateGesturePoints(
+            screenWidth, screenHeight, distanceRatio, durationMs, random, direction
+        )
+        val floor = speedFloorFor(points.duration)
+
+        // 1. Arc-length-even sampling of the bezier (organic shape + jitter).
+        val p0 = SpeedCurve.SampledPoint(points.startX, points.startY)
+        val p1 = SpeedCurve.SampledPoint(points.controlX, points.controlY)
+        val p2 = SpeedCurve.SampledPoint(points.endX, points.endY)
+        val arcPts = SpeedCurve.sampleBezier(p0, p1, p2, SAMPLE_COUNT, JITTER_PX, random)
+
+        // 2. Redistribute to time-even spacing, encoding the floored speed curve into
+        //    a single continuous path. Output count matches input to keep resolution.
+        val timePts = SpeedCurve.resampleByTimeProgress(arcPts, SAMPLE_COUNT, floor)
+
+        rebuildPolyline(reusableContinuousPath, timePts)
+        return ContinuousPlan(
+            path = reusableContinuousPath,
+            duration = points.duration,
+            speedFloor = floor
+        )
+    }
+
+    /**
+     * Generates a two-phase [GesturePlan] implementing the asymmetric speed curve via
+     * two `continueStroke` segments.
+     *
+     * **Legacy fallback.** Prefer [generateContinuousPlan]: it expresses the same
+     * accelerate/decelerate profile in a *single* stroke (no seam, no slow-drag tail),
+     * which both improves ROM compatibility and avoids ad/诱导-button misdetection.
+     * This two-segment path is retained only as a last-resort fallback should the
+     * single-stroke plan ever prove incompatible with an exotic ROM.
      *
      * Heavy math runs on [kotlinx.coroutines.Dispatchers.Default] (caller's responsibility).
      */
@@ -191,9 +266,48 @@ class GestureEngine {
          * Default asymmetric profile: 25% of time covers 45% of distance.
          * Acceleration is ~1.8× mean speed, deceleration ~0.73× — ratio ≈ 2.5:1,
          * matching AGENTS.md §4 ("加速短急 / 减速长缓").
+         *
+         * Used only by the legacy two-segment [generateGesturePlan] fallback. The
+         * primary [generateContinuousPlan] path ignores these and drives its speed
+         * curve via [speedFloorFor] + [SpeedCurve.flooredEaseOut] instead.
          */
         const val DEFAULT_ACCEL_DURATION_RATIO = 0.25f
         const val DEFAULT_ACCEL_DISTANCE_RATIO = 0.45f
+
+        // ---- Speed-adaptive trailing-speed floor (anti-misdetection) -----------
+        //
+        // The continuous plan encodes its speed curve via non-uniform point spacing
+        // (see SpeedCurve.resampleByTimeProgress + flooredEaseOut). The floor on the
+        // *trailing* speed is chosen per band so the finger never crawls across an
+        // ad/诱导 button long enough to be read as a tap (~50ms contact threshold):
+        //
+        // 极速 / 快速 (<700ms):   floor 0.88 — cross any button in ~48ms (safe).
+        // 中速 (700–1049ms):       floor 0.85 — ~52ms (safe).
+        // 慢速 (≥1050ms):          floor 0.80 — a long dwell here is intentional reading,
+        //                          not a tap, so the floor can relax for a gentler curve.
+        //
+        // Bands align with ParamSteps.toSpeedLabel boundaries (极速<400 / 快速<700 /
+        // 中速<1050 / 慢速≥1050).
+        private const val FAST_BAND_CEILING_MS = 700L
+        private const val NORMAL_BAND_CEILING_MS = 1050L
+
+        private const val FAST_SPEED_FLOOR = 0.88f
+        private const val NORMAL_SPEED_FLOOR = 0.85f
+        private const val SLOW_SPEED_FLOOR = 0.80f
+
+        /**
+         * Returns the normalized minimum trailing-speed floor appropriate for a swipe
+         * of the given *post-noise* duration. Faster swipes get a higher floor (they
+         * must keep moving briskly past buttons); the slow reading band may ease off.
+         *
+         * `internal` so pure-JVM unit tests can verify band selection without touching
+         * `android.graphics.Path` (which the rest of [GestureEngine] depends on).
+         */
+        internal fun speedFloorFor(actualDurationMs: Long): Float = when {
+            actualDurationMs < FAST_BAND_CEILING_MS -> FAST_SPEED_FLOOR
+            actualDurationMs < NORMAL_BAND_CEILING_MS -> NORMAL_SPEED_FLOOR
+            else -> SLOW_SPEED_FLOOR
+        }
 
         /**
          * Samples a sub-arc `s ∈ [sStart, sEnd]` of the quadratic bezier defined by
@@ -311,6 +425,11 @@ class GestureEngine {
             val actualDuration = addNoise(durationMs.toFloat(), 0.07f)
                 .toLong().coerceIn(150, 1500)
 
+            // 7. Phase ratios here are only consumed by the legacy two-segment
+            //    [generateGesturePlan] fallback. The primary path
+            //    [generateContinuousPlan] ignores these ratios and drives its speed
+            //    curve via [speedFloorFor] + SpeedCurve.flooredEaseOut instead, so we
+            //    keep the documented asymmetric defaults as the fallback baseline.
             return GesturePoints(
                 startX = startX,
                 startY = startY,
@@ -319,8 +438,8 @@ class GestureEngine {
                 endX = endX,
                 endY = endY,
                 duration = actualDuration,
-                accelDistanceRatio = DEFAULT_ACCEL_DISTANCE_RATIO,
-                accelDurationRatio = DEFAULT_ACCEL_DURATION_RATIO
+                accelDurationRatio = DEFAULT_ACCEL_DURATION_RATIO,
+                accelDistanceRatio = DEFAULT_ACCEL_DISTANCE_RATIO
             )
         }
     }

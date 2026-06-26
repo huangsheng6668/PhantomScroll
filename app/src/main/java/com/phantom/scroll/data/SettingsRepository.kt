@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -74,27 +73,13 @@ class SettingsRepository(
             if (enabled && pkg != null) profiles[pkg]?.settings ?: global else global
         }.stateIn(scope, SharingStarted.Eagerly, ScrollSettings.DEFAULT)
 
-    /** Which built-in preset (or Custom) the ACTIVE settings currently match. Derived from
-     *  [activeSettings] (not [global]) so the highlight reflects what the panel is actually
-     *  editing — e.g. when per-app is on and the current app has a profile, the chip reflects
-     *  that profile, and editing it flips to "自定义" (spec §3.1/§3.4). */
-    val selectedPreset: StateFlow<PresetSelection> =
-        activeSettings.map { PresetRegistry.selectionFor(it) }
-            .stateIn(scope, SharingStarted.Eagerly, PresetRegistry.selectionFor(activeSettings.value))
-
     init {
         // Async load (DataStore is async I/O) — backfill defaults once read completes.
         scope.launch {
-            val globalVal = store.loadGlobal()
-            _global.value = globalVal
+            _global.value = store.loadGlobal()
             _profiles.value = store.loadProfiles()
             _perAppEnabled.value = store.loadPerAppEnabled()
             _stats.value = store.loadStats()
-            lastCustomSettings = if (PresetRegistry.selectionFor(globalVal) is PresetSelection.Custom) {
-                globalVal
-            } else {
-                ScrollSettings.DEFAULT
-            }
 
             // Start persistence collectors AFTER the initial load completes.
             // drop(1) filters out the just-loaded values, collecting subsequent mutations only,
@@ -119,38 +104,18 @@ class SettingsRepository(
     // ---- mutations ----
     suspend fun updateGlobal(settings: ScrollSettings) { _global.value = settings }
 
-    /** Applies a built-in preset to the ACTIVE target (spec §3.1): the current package's profile
-     *  when per-app is on and a package is known, otherwise the global defaults. Delegates to
-     *  [updateActive] so it shares the same per-app semantics as Slider edits. */
-    suspend fun applyPreset(preset: Preset) { updateActive(preset.settings) }
-
-    private var lastCustomSettings: ScrollSettings = ScrollSettings.DEFAULT
-
     /**
      * Writes [settings] to the active target: the current package's profile when per-app is on
      * and a current package is known (dynamically creating the profile), otherwise the global
      * defaults (spec §3.4 "首次调整自动创建 profile"). Persistence is debounced via collectors.
      */
     suspend fun updateActive(settings: ScrollSettings) {
-        if (PresetRegistry.selectionFor(settings) is PresetSelection.Custom) {
-            lastCustomSettings = settings
-        }
         val pkg = _currentPackage.value
         if (_perAppEnabled.value && pkg != null) {
             upsertProfile(pkg, settings)
         } else {
             _global.value = settings
         }
-    }
-
-    /** Applies the last custom user settings to active target. */
-    suspend fun applyCustomPreset() {
-        val target = if (PresetRegistry.selectionFor(lastCustomSettings) is PresetSelection.Custom) {
-            lastCustomSettings
-        } else {
-            ScrollSettings.DEFAULT
-        }
-        updateActive(target)
     }
 
     /** Forgets the current package's profile so activeSettings falls back to global. No-op if no

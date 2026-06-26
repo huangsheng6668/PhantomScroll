@@ -230,4 +230,53 @@ class GestureEngineTest {
         assertTrue("UP endY must be above startY", up.endY < up.startY)
         assertTrue("DOWN endY must be below startY", down.endY > down.startY)
     }
+
+    // ------------------------------------------------------------------
+    // Single continuous-stroke plan tests. The engine now encodes its speed curve
+    // *inside one path* (no continueStroke seam, no slow-drag tail) via a floored
+    // trailing speed that's chosen per speed band — the fix for ad/诱导 misdetection.
+    //
+    // These target [GestureEngine.speedFloorFor] directly: it's the pure-JVM, Path-free
+    // heart of the band selection (generateContinuousPlan itself touches android.graphics
+    // Path and so can only run on a device/Robolectric, not a plain JVM).
+    // ------------------------------------------------------------------
+
+    @Test
+    fun speedFloor_quick_and_fast_band_use_high_floor() {
+        // Durations < 700ms (极速 + 快速 bands) must use the high floor so the finger
+        // crosses any ad button in <50ms.
+        assertEquals(GestureEngine.speedFloorFor(300L), 0.88f, 1e-5f) // 极速
+        assertEquals(GestureEngine.speedFloorFor(500L), 0.88f, 1e-5f) // 快速
+        assertEquals(GestureEngine.speedFloorFor(699L), 0.88f, 1e-5f) // 快速上界
+    }
+
+    @Test
+    fun speedFloor_normal_band_uses_mid_floor() {
+        // 700–1049ms (中速 band): mid floor, still safe.
+        assertEquals(GestureEngine.speedFloorFor(700L), 0.85f, 1e-5f)
+        assertEquals(GestureEngine.speedFloorFor(850L), 0.85f, 1e-5f)
+        assertEquals(GestureEngine.speedFloorFor(1049L), 0.85f, 1e-5f)
+    }
+
+    @Test
+    fun speedFloor_slow_band_relaxes_floor() {
+        // ≥1050ms (慢速 band): the floor relaxes to 0.80 for a gentler curve, since a
+        // long dwell there is intentional reading rather than a tap.
+        assertEquals(GestureEngine.speedFloorFor(1050L), 0.80f, 1e-5f)
+        assertEquals(GestureEngine.speedFloorFor(1200L), 0.80f, 1e-5f)
+        assertEquals(GestureEngine.speedFloorFor(1500L), 0.80f, 1e-5f)
+    }
+
+    @Test
+    fun speedFloor_never_below_global_minimum() {
+        // Across the full supported duration range, the floor must stay ≥ 0.80 — the
+        // global anti-misdetection minimum. Faster bands go higher, none may drop lower.
+        for (durationMs in 150..1500L step 50) {
+            val floor = GestureEngine.speedFloorFor(durationMs)
+            assertTrue(
+                "speedFloor $floor dropped below global minimum 0.80 at durationMs=$durationMs",
+                floor >= 0.80f
+            )
+        }
+    }
 }
