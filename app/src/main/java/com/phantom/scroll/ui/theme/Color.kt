@@ -8,7 +8,6 @@ val DarkSurfaceTranslucent = Color(0xCC121216) // 80% opacity for glassmorphism 
 
 val PhantomCyan = Color(0xFF00E5FF)       // Vibrant Cyan accent
 val PhantomBlue = Color(0xFF2979FF)       // Neon Blue primary
-val PhantomPurple = Color(0xFFD500F9)     // Magenta/Purple accent
 
 val TextPrimary = Color(0xFFF5F5F7)
 val TextSecondary = Color(0xFF8E8E93)

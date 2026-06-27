@@ -5,18 +5,12 @@
     <color name="dark_surface_translucent">#CC121216</color>
     <color name="phantom_cyan">#FF00E5FF</color>
     <color name="phantom_blue">#FF2979FF</color>
-    <color name="phantom_purple">#FFD500F9</color>
     <color name="text_primary">#FFF5F5F7</color>
     <color name="text_secondary">#FF8E8E93</color>
     <color name="text_tertiary">#FF48484A</color>
     <color name="success_green">#FF30D158</color>
 
     <color name="error_red">#FFFF453A</color>
-    <!-- derived alphas used by handle gradient + fold button (parity with Compose) -->
-    <color name="phantom_cyan_80">#CC00E5FF</color>
-    <color name="phantom_blue_50">#802979FF</color>
-    <color name="white_70">#B3FFFFFF</color>
-    <color name="white_10">#1AFFFFFF</color>
 
     <!-- ===== Overlay redesign (light/green) ===== -->
     <color name="overlay_surface">#FFFFFFFF</color>
@@ -25,9 +19,7 @@
     <color name="overlay_muted">#FF6E6E76</color>
     <color name="overlay_subtle">#FF888892</color>
     <color name="overlay_border">#FFE1E1E6</color>
-    <color name="overlay_border_2">#FFECECEF</color>
     <color name="overlay_accent">#FF1E9E55</color>
-    <color name="overlay_accent_2">#FF3FB373</color>
     <color name="overlay_accent_soft">#FFE8F5EC</color>
     <color name="overlay_warning">#FFD98324</color>
     <color name="overlay_warning_soft">#FFFBEFD9</color>
