@@ -16,13 +16,21 @@
 | 滑动方向 | 支持**纵向滑动**（包含向上 UP 与向下 DOWN 滚动切换） |
 | compileSdk / targetSdk | API 35 (Android 15) |
 | minSdk | API 26 (Android 8.0) |
+| 引导页控制按钮 | 彻底**移除**底部全局一键授权/刷新按钮，简化交互至各权限卡片独立操作 |
 
 # Technical Stack & Refined Requirements
 
 ## 1. 悬浮窗设计与边缘吸附状态机 (WindowManager & Native Overlay)
 
 - **悬浮窗构建**：使用系统 `WindowManager` 动态添加全局悬浮窗，`LayoutParams` 必须正确配置 `TYPE_APPLICATION_OVERLAY`、`FLAG_NOT_FOCUSABLE`、`FLAG_LAYOUT_IN_SCREEN` 并设置刘海屏适配（如 `layoutInDisplayCutoutMode = LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES`），且 `LayoutParams.gravity = Gravity.TOP or Gravity.LEFT`。同时需在状态机切换（Expanded/Collapsed）更新标志时，保留 `FLAG_LAYOUT_IN_SCREEN` 以确保全屏模式下边缘贴合和正常隐藏。
-- **UI 框架分工**：主界面权限引导页采用 Jetpack Compose 构建；悬浮窗控制面板全面重写为**原生 View (XML 布局 + Material Components)**，彻底移除阅读期间常驻的 Compose 运行时以节省内存。
+- **UI 框架分工**：
+  - 悬浮窗控制面板全面重写为**原生 View (XML 布局 + Material Components)**，彻底移除阅读期间常驻的 Compose 运行时以节省内存。
+  - 主界面权限引导页 (`MainScreen`) 采用 **Jetpack Compose 现代化暗黑渐变发光风格**重构，界面与实际应用主色调保持 100% 吻合（背景 `#0F0F12`，卡片 `#1E1E24`，强调色 `#00E5FF`/`#2979FF`）。
+- **引导页界面设计规范**：
+  - **自绘矢量图标**：完全摒弃 Emoji 图标和外置图片资源，各卡片图标统一使用 Compose `Canvas` 进行矢量路径（`Path` / 二阶贝塞尔曲线 `quadraticTo`）纯代码手绘，实现 0 资源依赖和极致的视网膜屏显示精度。
+  - **渐变进度环 (Summary Card)**：头部采用 Canvas 自定义绘制统计卡片，使用 `animateFloatAsState` 控制环形渐变进度平滑扫气动画，正中心使用 Monospace 字体展示 `已授予项/总项` 比例。
+  - **折叠展示组**：将 6 项权限科学分入必要、建议（后台保活）及可选三组卡片。“建议”与“可选”栏目外包 `AnimatedVisibility` 容器，支持带高度缓动拉伸动画的折叠与收起，点击 Toggle 条时箭头 `▴`/`▾` 会同步翻转。
+  - **极简无按钮控制**：完全移除底部多余的全局“开始授权/刷新”大主按钮，将所有的交互完全剥离给各个卡片行的微光状态 Badge（`已开启 ✓` 与 `去授权`），简化用户的操作心理负担。
 - **拖拽与状态机**：利用自定义 View 的 `onTouchEvent` 与 `onInterceptTouchEvent` 拦截与监听用户拖拽。悬浮窗内部维护一个状态机（State）：`Expanded`（展开面板）、`Snapping`（吸附中动画）、`Collapsed`（边缘折叠手柄）。
 - **边缘吸附与折叠动画**：
   - 当拖拽结束时，计算当前 $X$ 坐标。若超过屏幕宽度的一半，利用 `ValueAnimator` 动画将悬浮窗平滑推至右边缘，反之推至左边缘（250ms 吸附）。

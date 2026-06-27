@@ -37,22 +37,6 @@ class ServiceEventReceiver(
         }
     }
 
-    private val notificationActionReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                NotificationHelper.ACTION_TOGGLE -> {
-                    repository.toggleRunning()
-                    PhantomLog.d(TAG, "Notification toggle → isRunning: ${repository.isRunning.value}")
-                }
-                NotificationHelper.ACTION_STOP -> {
-                    PhantomLog.d(TAG, "Notification stop → disabling service.")
-                    repository.stopRunning()
-                    onStopService()
-                }
-            }
-        }
-    }
-
     fun start() {
         val screenFilter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
@@ -64,22 +48,10 @@ class ServiceEventReceiver(
             screenFilter,
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
-
-        val notificationFilter = IntentFilter().apply {
-            addAction(NotificationHelper.ACTION_TOGGLE)
-            addAction(NotificationHelper.ACTION_STOP)
-        }
-        ContextCompat.registerReceiver(
-            context,
-            notificationActionReceiver,
-            notificationFilter,
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
     }
 
     fun stop() {
         safeUnregister(screenReceiver)
-        safeUnregister(notificationActionReceiver)
     }
 
     private fun safeUnregister(receiver: BroadcastReceiver) {

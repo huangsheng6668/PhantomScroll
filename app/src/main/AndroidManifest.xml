@@ -3,6 +3,11 @@
 
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Foreground service: keeps the accessibility process at foreground priority so its status
+         notification stays resident (= process alive, user can detect liveness) and the system is
+         far less likely to reclaim it under memory pressure. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <application
         android:name=".PhantomScrollApp"
@@ -35,6 +40,32 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!-- Independent foreground service for keep-alive (mirrors gkd's StatusService). Started from
+             PhantomScrollService.onServiceConnected while the accessibility binding counts as a
+             foreground component, so its startForegroundService() takes the foreground-start
+             exemption path. Holds the resident status notification that keeps the process at
+             foreground priority and signals liveness to the user. -->
+        <service
+            android:name=".service.KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Display the running state of the PhantomScroll accessibility auto-scroll service so it is not reclaimed by the system." />
+        </service>
+
+        <!-- Statically registered BroadcastReceiver for status bar notification controls.
+             This allows the notification buttons to wake up/pull up the app process even if
+             it has been killed by the task manager. -->
+        <receiver
+            android:name=".service.NotificationActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.phantom.scroll.ACTION_TOGGLE" />
+                <action android:name="com.phantom.scroll.ACTION_STOP" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

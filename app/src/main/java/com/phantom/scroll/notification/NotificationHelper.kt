@@ -33,6 +33,9 @@ object NotificationHelper {
     }
 
     fun showNotification(context: Context, isRunning: Boolean) {
+        // After the service calls startForeground(id, notification), refreshing with the SAME id
+        // via notify() updates the resident notification in place (no flicker) while keeping the
+        // service's foreground priority intact. The id MUST match the one passed to startForeground.
         val notificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(NOTIFICATION_ID, buildNotification(context, isRunning))

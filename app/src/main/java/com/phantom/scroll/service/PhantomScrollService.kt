@@ -42,6 +42,12 @@ class PhantomScrollService : AccessibilityService() {
     private lateinit var floatingWindowController: FloatingWindowController
     private lateinit var scrollOrchestrator: ScrollOrchestrator
     private lateinit var eventReceiver: ServiceEventReceiver
+    /**
+     * 1×1 像素 `TYPE_ACCESSIBILITY_OVERLAY` 保活窗（参考 gkd / 李跳跳）。与交互式控制面板
+     * [floatingWindowController] 完全独立：后者用 `TYPE_APPLICATION_OVERLAY` 负责拖拽/手势 UI，
+     * 本窗只负责让进程拥有一个"可见窗口"以降低 oom_adj，规避 LowMemoryKiller。
+     */
+    private lateinit var keepAliveWindow: KeepAliveWindow
 
     /**
      * Packages that must NEVER become currentPackage: SystemUI (status bar / recents), the app's
@@ -58,6 +64,7 @@ class PhantomScrollService : AccessibilityService() {
     private val perAppDetector by lazy { PerAppDetector(ownPackage = packageName, denylist = systemPackageDenylist) }
 
     override fun onServiceConnected() {
+        instance = this
         super.onServiceConnected()
         PhantomLog.d(TAG, "Service connected.")
         Toast.makeText(this, "👻 PhantomScroll 自动翻页服务已连接", Toast.LENGTH_SHORT).show()
@@ -67,6 +74,19 @@ class PhantomScrollService : AccessibilityService() {
         floatingWindowController = FloatingWindowController(this, repository, serviceScope, panelStateFlow)
         scrollOrchestrator = ScrollOrchestrator(this, repository, serviceScope)
         eventReceiver = ServiceEventReceiver(this, repository) { disableSelf() }
+
+        // Keep-alive overlay window: a 1px TYPE_ACCESSIBILITY_OVERLAY window (mirrors gkd's
+        // useAliveOverlayView). Best-effort, never blocks other features on failure.
+        keepAliveWindow = KeepAliveWindow(this)
+        keepAliveWindow.show()
+
+        // Start the independent foreground KeepAliveService (mirrors gkd's StatusService). Doing this
+        // from onServiceConnected is the key: while the AccessibilityService is connected the process
+        // counts as having a foreground component, so startForegroundService() here takes the
+        // foreground-start exemption path instead of throwing ForegroundServiceStartNotAllowedException.
+        // That resident notification is what keeps the process at foreground priority so it survives
+        // memory pressure / OEM cleanup, and lets the user see the service is alive.
+        KeepAliveService.start(this)
 
         floatingWindowController.start()
         scrollOrchestrator.start()
@@ -100,6 +120,8 @@ class PhantomScrollService : AccessibilityService() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         updateScreenDimensions()
+        // Guard against the system occasionally tearing down the overlay window on rotation etc.
+        if (::keepAliveWindow.isInitialized) keepAliveWindow.ensureShown()
     }
 
     private fun updateScreenDimensions() {
@@ -119,15 +141,26 @@ class PhantomScrollService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        instance = null
         PhantomLog.d(TAG, "Service being destroyed.")
         repository.stopRunning()
 
         if (::floatingWindowController.isInitialized) floatingWindowController.stop()
         if (::scrollOrchestrator.isInitialized) scrollOrchestrator.stop()
         if (::eventReceiver.isInitialized) eventReceiver.stop()
+        if (::keepAliveWindow.isInitialized) keepAliveWindow.hide()
 
+        // The foreground keep-alive is owned by KeepAliveService; stop it so the resident
+        // notification is removed when the accessibility service is being torn down.
+        KeepAliveService.stop(this)
         NotificationHelper.cancelNotification(this)
         serviceScope.cancel()
         super.onDestroy()
+    }
+
+    companion object {
+        @Volatile
+        var instance: PhantomScrollService? = null
+            private set
     }
 }
