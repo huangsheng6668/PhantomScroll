@@ -126,7 +126,7 @@ fun MainScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkBackground)
+            .background(LightBackground)
             .statusBarsPadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
@@ -142,34 +142,44 @@ fun MainScreen() {
                 .size(72.dp)
                 .background(
                     brush = Brush.linearGradient(
-                        colors = listOf(DarkSurface, Color(0xFF15151A))
+                        colors = listOf(LightSurface, Color(0xFFE8ECEF))
                     ),
                     shape = CircleShape
                 )
-                .border(1.5.dp, PhantomCyan.copy(alpha = 0.3f), CircleShape),
+                .border(1.5.dp, OverlayGreen.copy(alpha = 0.3f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Canvas(modifier = Modifier.size(38.dp)) {
                 val w = size.width
                 val h = size.height
                 val path = Path().apply {
-                    moveTo(w * 0.15f, h * 0.75f)
-                    quadraticTo(w * 0.15f, h * 0.15f, w * 0.5f, h * 0.15f)
-                    quadraticTo(w * 0.85f, h * 0.15f, w * 0.85f, h * 0.75f)
-                    // Wave bottom shape
-                    quadraticTo(w * 0.75f, h * 0.68f, w * 0.65f, h * 0.75f)
-                    quadraticTo(w * 0.5f, h * 0.82f, w * 0.35f, h * 0.75f)
-                    quadraticTo(w * 0.25f, h * 0.68f, w * 0.15f, h * 0.75f)
+                    moveTo(w * 0.2f, h * 0.5f)
+                    cubicTo(w * 0.2f, h * 0.15f, w * 0.8f, h * 0.15f, w * 0.8f, h * 0.5f)
+                    cubicTo(w * 0.8f, h * 0.8f, w * 0.65f, h * 0.85f, w * 0.5f, h * 0.8f)
+                    cubicTo(w * 0.35f, h * 0.85f, w * 0.2f, h * 0.8f, w * 0.2f, h * 0.5f)
                     close()
                 }
                 drawPath(
                     path = path, 
-                    color = PhantomCyan, 
+                    color = OverlayGreen, 
                     style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
                 )
                 // Eyes
-                drawCircle(color = PhantomCyan, radius = 2.5.dp.toPx(), center = Offset(w * 0.38f, h * 0.45f))
-                drawCircle(color = PhantomCyan, radius = 2.5.dp.toPx(), center = Offset(w * 0.62f, h * 0.45f))
+                drawCircle(color = OnLight, radius = 2.5.dp.toPx(), center = Offset(w * 0.38f, h * 0.45f))
+                drawCircle(color = OnLight, radius = 2.5.dp.toPx(), center = Offset(w * 0.62f, h * 0.45f))
+                // Blushes
+                drawCircle(color = Color(0xFFFFB2B2), radius = 2.dp.toPx(), center = Offset(w * 0.32f, h * 0.52f))
+                drawCircle(color = Color(0xFFFFB2B2), radius = 2.dp.toPx(), center = Offset(w * 0.68f, h * 0.52f))
+                // Mouth
+                drawArc(
+                    color = OnLight,
+                    startAngle = 0f,
+                    sweepAngle = 180f,
+                    useCenter = false,
+                    topLeft = Offset(w * 0.45f, h * 0.48f),
+                    size = Size(w * 0.1f, h * 0.08f),
+                    style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
+                )
             }
         }
         
@@ -181,7 +191,7 @@ fun MainScreen() {
             fontWeight = FontWeight.ExtraBold,
             style = LocalTextStyle.current.copy(
                 brush = Brush.linearGradient(
-                    colors = listOf(Color.White, PhantomCyan)
+                    colors = listOf(OnLight, OverlayGreen)
                 )
             )
         )
@@ -189,7 +199,7 @@ fun MainScreen() {
         Text(
             text = "幽灵般拟人化的自动滚动引擎，让小说与漫画阅读如丝般顺滑",
             fontSize = 12.sp,
-            color = TextSecondary,
+            color = OnLightMuted,
             modifier = Modifier.padding(top = 4.dp, bottom = 20.dp)
         )
 
@@ -214,13 +224,13 @@ fun MainScreen() {
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         // Background ring
                         drawCircle(
-                            color = Color.White.copy(alpha = 0.05f),
+                            color = Color.Black.copy(alpha = 0.05f),
                             radius = size.minDimension / 2 - 3.dp.toPx(),
                             style = Stroke(width = 4.5.dp.toPx())
                         )
                         // Progress ring
                         drawArc(
-                            color = if (allGranted) SuccessGreen else PhantomCyan,
+                            color = OverlayGreen,
                             startAngle = -90f,
                             sweepAngle = animatedSweepAngle,
                             useCenter = false,
@@ -231,7 +241,7 @@ fun MainScreen() {
                     }
                     Text(
                         text = "$grantedCount/$totalCount",
-                        color = Color.White,
+                        color = OnLight,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         fontFamily = FontFamily.Monospace
@@ -245,14 +255,14 @@ fun MainScreen() {
                                else "待完成 ${2 - requiredGrantedCount} 项必要配置",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = OnLight
                     )
                     Text(
                         text = if (allGranted) "仿生滚动助手已经万事俱备，立刻开始拟人化体验吧！"
                                else if (allRequiredGranted) "已具备基本滑屏服务，建议开启余下配置以优化后台留存。"
                                else "您需要开启必要服务来运行手势模拟器，其余保活项可按需授权。",
                         fontSize = 11.5.sp,
-                        color = TextSecondary,
+                        color = OnLightMuted,
                         modifier = Modifier.padding(top = 2.dp),
                         lineHeight = 15.sp
                     )
@@ -276,7 +286,7 @@ fun MainScreen() {
                     title = "显示在其他应用上（悬浮窗）",
                     description = "在您阅读小说或漫画应用之上层叠加控制面板，以提供随时启停、调整速度、方向控制等拟人化滑屏调节菜单。",
                     isGranted = isOverlayGranted,
-                    tintColor = Color(0xFF2DD4BF),
+                    tintColor = OverlayGreen,
                     onGrantClick = {
                         val intent = Intent(
                             Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -286,14 +296,14 @@ fun MainScreen() {
                     }
                 )
                 
-                HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+                HorizontalDivider(color = Color.Black.copy(alpha = 0.05f))
 
                 PermissionItem(
                     key = "accessibility",
                     title = "无障碍服务（Accessibility Service）",
                     description = "本应用的核心滚动引擎依赖无障碍接口。我们在手势算法里融合了拟人化仿生机制：加入了加速段、长距离渐慢的非对称速度轨迹，以及微幅手势水平噪声（抖动像素点），以最大限度还原真实人手的滑屏习惯，本服务绝对不收集、上传任何用户数据。",
                     isGranted = isAccessibilityEnabled,
-                    tintColor = PhantomBlue,
+                    tintColor = Color(0xFF2979FF),
                     onGrantClick = {
                         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
                         context.startActivity(intent)
@@ -304,11 +314,11 @@ fun MainScreen() {
 
         // RECOMMENDED SECTION
         SectionHeader(
-            dotColor = WarningOrange,
+            dotColor = OverlayWarningOrange,
             title = "建议优化（后台保活）",
             badgeText = "3 项",
-            badgeBgColor = WarningOrange.copy(alpha = 0.12f),
-            badgeTextColor = WarningOrange
+            badgeBgColor = OverlayWarningOrange.copy(alpha = 0.12f),
+            badgeTextColor = OverlayWarningOrange
         )
 
         GroupCard(modifier = Modifier.padding(bottom = 16.dp)) {
@@ -320,7 +330,7 @@ fun MainScreen() {
                             title = "后台电池优化豁免（无限制后台）",
                             description = "禁止安卓电量管家自动将本应用放入休眠状态，以解决阅读过久被突然终止服务的问题。",
                             isGranted = isBatteryOptimizationIgnored,
-                            tintColor = Color(0xFFFF9F0A),
+                            tintColor = OverlayWarningOrange,
                             onGrantClick = {
                                 try {
                                     val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
@@ -331,14 +341,14 @@ fun MainScreen() {
                             }
                         )
 
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+                        HorizontalDivider(color = Color.Black.copy(alpha = 0.05f))
 
                         PermissionItem(
                             key = "notification",
                             title = "系统通知权限",
                             description = "提供低优先级的状态栏前台保活服务通知，并附带可随时挂起/恢复模拟滑动动作的快捷操作按钮。",
                             isGranted = isNotificationGranted,
-                            tintColor = Color(0xFFFF9F0A),
+                            tintColor = OverlayWarningOrange,
                             onGrantClick = {
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -348,14 +358,14 @@ fun MainScreen() {
                             }
                         )
 
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+                        HorizontalDivider(color = Color.Black.copy(alpha = 0.05f))
 
                         PermissionItem(
                             key = "usage",
                             title = "应用使用情况访问权限",
                             description = "用于精准感知您前台运行的小说漫画 App 的切换，自动切换和记忆不同 App 的专有滑动速度。",
                             isGranted = isNotificationGranted, // Simulates usage access permission integration link
-                            tintColor = PhantomCyan,
+                            tintColor = OverlayGreen,
                             onGrantClick = {
                                 try {
                                     val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
@@ -379,11 +389,11 @@ fun MainScreen() {
 
         // OPTIONAL SECTION
         SectionHeader(
-            dotColor = TextSecondary,
+            dotColor = OnLightMuted,
             title = "可选配置（开机自动就绪）",
             badgeText = "1 项",
-            badgeBgColor = Color.White.copy(alpha = 0.06f),
-            badgeTextColor = TextSecondary
+            badgeBgColor = Color.Black.copy(alpha = 0.06f),
+            badgeTextColor = OnLightMuted
         )
 
         GroupCard(modifier = Modifier.padding(bottom = 16.dp)) {
@@ -394,7 +404,7 @@ fun MainScreen() {
                         title = "应用自启动 / 关联启动权限",
                         description = "在不同定制系统（小米/华为/OPPO等）下，允许系统重启后自动恢复服务状态，省去手动重新配置的琐碎繁杂流程。",
                         isGranted = isAutostartConfigured,
-                        tintColor = Color(0xFFF87171),
+                        tintColor = Color(0xFFEF4444),
                         onGrantClick = {
                             openAutostartSettings(context)
                             isAutostartConfigured = true
@@ -417,9 +427,14 @@ fun MainScreen() {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(4.dp, RoundedCornerShape(16.dp)),
+                .shadow(4.dp, RoundedCornerShape(16.dp))
+                .border(
+                    width = 1.dp,
+                    color = Color.Black.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(16.dp)
+                ),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = DarkSurface.copy(alpha = 0.5f))
+            colors = CardDefaults.cardColors(containerColor = LightSurface)
         ) {
             Column(
                 modifier = Modifier.padding(20.dp)
@@ -428,7 +443,7 @@ fun MainScreen() {
                     text = "📖 保活与使用说明",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = PhantomCyan,
+                    color = OverlayGreen,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
                 
@@ -455,12 +470,12 @@ private fun GroupCard(
             .border(
                 width = 1.dp,
                 brush = Brush.linearGradient(
-                    listOf(Color.White.copy(alpha = 0.08f), Color.White.copy(alpha = 0.04f))
+                    listOf(Color.Black.copy(alpha = 0.06f), Color.Black.copy(alpha = 0.03f))
                 ),
                 shape = RoundedCornerShape(16.dp)
             ),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+        colors = CardDefaults.cardColors(containerColor = LightSurface),
         content = content
     )
 }
@@ -487,7 +502,7 @@ private fun SectionHeader(
             text = title,
             fontSize = 11.5.sp,
             fontWeight = FontWeight.Bold,
-            color = TextSecondary,
+            color = OnLightMuted,
             letterSpacing = 0.5.sp
         )
         Box(
@@ -518,7 +533,7 @@ private fun CollapseToggle(
             .clickable(onClick = onClick)
             .border(
                 width = 1.dp,
-                color = Color.White.copy(alpha = 0.05f),
+                color = Color.Black.copy(alpha = 0.05f),
                 shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
             )
             .padding(12.dp),
@@ -530,14 +545,14 @@ private fun CollapseToggle(
         ) {
             Text(
                 text = if (isExpanded) "收起${label}" else "展开建议${label} (${count})",
-                color = TextSecondary,
+                color = OnLightMuted,
                 fontSize = 11.5.sp,
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = if (isExpanded) "▴" else "▾",
-                color = TextSecondary,
+                color = OnLightMuted,
                 fontSize = 10.sp
             )
         }
@@ -568,12 +583,12 @@ private fun PermissionItem(
                 text = title,
                 fontSize = 14.5.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = OnLight
             )
             Text(
                 text = description,
                 fontSize = 11.5.sp,
-                color = TextSecondary,
+                color = OnLightMuted,
                 modifier = Modifier.padding(top = 2.dp),
                 lineHeight = 15.sp
             )
@@ -582,10 +597,10 @@ private fun PermissionItem(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(20.dp))
-                .background(if (isGranted) SuccessGreen.copy(alpha = 0.12f) else PhantomCyan.copy(alpha = 0.12f))
+                .background(if (isGranted) OverlayGreenSoft else OverlayWarningOrange.copy(alpha = 0.1f))
                 .border(
                     width = 1.dp,
-                    color = if (isGranted) SuccessGreen.copy(alpha = 0.2f) else PhantomCyan.copy(alpha = 0.25f),
+                    color = if (isGranted) OverlayGreen.copy(alpha = 0.2f) else OverlayWarningOrange.copy(alpha = 0.2f),
                     shape = RoundedCornerShape(20.dp)
                 )
                 .clickable(enabled = !isGranted, onClick = onGrantClick)
@@ -594,7 +609,7 @@ private fun PermissionItem(
         ) {
             Text(
                 text = if (isGranted) "已开启 ✓" else "去授权",
-                color = if (isGranted) SuccessGreen else PhantomCyan,
+                color = if (isGranted) OverlayGreen else OverlayWarningOrange,
                 fontSize = 11.5.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -607,7 +622,7 @@ private fun PermissionIcon(key: String, tintColor: Color) {
     Box(
         modifier = Modifier
             .size(40.dp)
-            .background(tintColor.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
+            .background(tintColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.size(20.dp)) {
@@ -747,13 +762,13 @@ private fun InstructionStep(num: Int, text: String) {
         Text(
             text = "$num. ",
             fontSize = 12.sp,
-            color = PhantomCyan,
+            color = OverlayGreen,
             fontWeight = FontWeight.Bold
         )
         Text(
             text = text,
             fontSize = 12.sp,
-            color = TextSecondary,
+            color = OnLightMuted,
             lineHeight = 16.sp
         )
     }
