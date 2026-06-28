@@ -38,7 +38,7 @@ class DataStoreProfileStore(private val context: Context) : ProfileStore {
     override suspend fun loadGlobal(): ScrollSettings {
         val p = dataStore.data.first()
         val direction = p[Keys.DIRECTION]?.let { runCatching { ScrollDirection.valueOf(it) }.getOrNull() }
-            ?: ScrollDirection.UP
+            ?: ScrollDirection.DOWN
         return ScrollSettings(
             duration = p[Keys.DURATION] ?: ScrollSettings.DEFAULT.duration,
             interval = p[Keys.INTERVAL] ?: ScrollSettings.DEFAULT.interval,
@@ -117,7 +117,7 @@ class DataStoreProfileStore(private val context: Context) : ProfileStore {
         distanceRatio = p[floatPreferencesKey("$PROFILE_PREFIX$pkg.distanceRatio")] ?: ScrollSettings.DEFAULT.distanceRatio,
         direction = p[stringPreferencesKey("$PROFILE_PREFIX$pkg.direction")]?.let {
             runCatching { ScrollDirection.valueOf(it) }.getOrNull()
-        } ?: ScrollDirection.UP
+        } ?: ScrollDirection.DOWN
     )
 
     private fun writeProfile(

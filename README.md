@@ -16,7 +16,8 @@
 2. **微服务化单进程架构与极限性能优化**
    - **移除前台服务依赖**：完全停用 `startForeground()`，改用常规状态通知，免去了 Google Play 应用商店前台服务数据同步权限的严格红线审查。
    - **单进程架构合并**：取消了 `:accessibility` 独立子进程，将所有功能合并至主进程中运行。消除了 20~30MB 的 IPC 内存垃圾开销，并解决了 SharedPreferences 跨进程数据不安全问题。
-   - **DataStore 持久化节流**：在 [SettingsRepository.kt](app/src/main/java/com/phantom/scroll/data/SettingsRepository.kt) 中以 `MutableStateFlow` + `.drop(1).debounce(500)` 写回 Preferences DataStore，杜绝用户拖拽 Slider 时高频磁盘 I/O 所引发的线程阻塞和卡顿（V2 起从 SharedPreferences 迁移至 DataStore）。
+   - **DataStore 持久化节流**：在 [SettingsRepository.kt](app/src/main/java/com/phantom/scroll/data/SettingsRepository.kt) 中以 `MutableStateFlow` 对 Preferences DataStore 写入进行节流/周期合并，杜绝用户拖拽 Slider 时高频磁盘 I/O 所引发的线程阻塞和卡顿（V2 起从 SharedPreferences 迁移至 DataStore）。
+   - **全局设定值动态复位与多分辨率适配**：切换至无 Profile 配置的 App 时（"按App分别记录"关闭），全局设定值会立即恢复并重置到预设默认值：速度快速（持续时间 `500ms`）、间隔 `2s`（`2000ms`）、方向向下 (`ScrollDirection.DOWN`)。同时默认滑动距离比率在获取或变更屏幕高度时，通过公式 `distanceRatio = (1500f / screenHeight).coerceIn(0.3f, 0.95f)` 动态计算，保证首次加载和复位后滑动的物理像素高度精准为 `1500px`，自动适配任何物理屏幕尺寸。
    - **主/后台线程隔离与零 GC 消耗 (Zero GC)**：所有数学计算和 Bio-Noise 生成异步在 `Dispatchers.Default` 进行。在服务生命周期内复用同一个 `Path` 对象并通过 `reset()` 清理，实现滑动循环 0 GC 消耗。
    - **无阻挂起定时器**：使用协程的 `delay()` 挂起函数替代传统的 Timer 线程，保证等待期间 CPU 核心可休眠，极致省电。
 
@@ -153,9 +154,10 @@ Android 15 强制启用了沉浸式 Edge-to-Edge 视效。为此：
 该命令会测试 **85 个纯逻辑 JVM 单元测试**（无 Robolectric），覆盖：
 - **`GestureEngineTest`**：滑动点落在合法屏幕安全区；极短/极长时间正确 Coerce 进 `[150,1500]`ms；Bio-Noise 抖动差异性；**UP/DOWN 方向翻转**及距离镜像；**起点 Y 随机化**；**endX 贴近 startX**（横向漂移收敛）；**高 distanceRatio 下完整距离不截断**；**加速/减速比例非对称**。
 - **`SpeedCurveTest`**：ease-out-cubic 端点与单调性；时间→进度映射在加速边界命中 `accelDistanceRatio` 且加速段速度严格大于减速段；贝塞尔重采样点数与端点保持；jitter 零抖动时落在解析曲线上、有抖动时约束在 ±2σ 内。
-- **`SettingsRepositoryTest`**：activeSettings 回落/切换、profile 增删、stats 累加/重置、`updateActive`/`forgetActiveProfile` 派生。
+- **`SettingsRepositoryTest`**：activeSettings 回落/切换、profile 增删、stats 累加/重置、`updateActive`/`forgetActiveProfile` 派生、全局设定自动动态复位。单元测试通过 `enablePeriodicSave = false` 彻底规避 5 分钟 periodic saver 在 `advanceUntilIdle()` 时无限虚拟时间推进导致的 hang 住/死锁问题。
 - **`PerAppDetectorTest`**：denylist / 去重 / 自身包名过滤 / 300ms 防抖。
 - **`FailurePolicyTest` / `ScreenStateCoordinatorTest` / `OverlayGeometryTest` / `MigrationMapperTest` / `ProfileKeyParsingTest` / `ScrollSettingsTest`**。
+- **`JVM 本地单测日志安全适配`**：自定义日志 [PhantomLog](app/src/main/java/com/phantom/scroll/util/PhantomLog.kt) 在测试环境下自动拦截 `android.util.Log` 方法崩溃，智能重定向至控制台 `println`，实现 100% 纯 JVM 本地环境零依赖通过。
 
 ### 2. 生成 Release 混淆包
 执行以下命令进行编译、R8 资源缩减与代码混淆：

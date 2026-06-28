@@ -11,7 +11,7 @@ data class ScrollSettings(
     val duration: Long,
     val interval: Long,
     val distanceRatio: Float,
-    val direction: ScrollDirection = ScrollDirection.UP
+    val direction: ScrollDirection = ScrollDirection.DOWN
 ) {
     companion object {
         /** 与旧 ScrollConfig 默认值一致，保证迁移后行为不变。 */
@@ -19,7 +19,7 @@ data class ScrollSettings(
             duration = 500L,
             interval = 2000L,
             distanceRatio = 0.75f,
-            direction = ScrollDirection.UP
+            direction = ScrollDirection.DOWN
         )
     }
 }

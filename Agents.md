@@ -48,6 +48,9 @@
 - **双向同步与节流落盘**：
   - 原生 View 中的 `Slider`、开关等交互控件通过观察 Repository 的 `StateFlow` 进行命令式刷新（零重组开销）。
   - 用户拖动 Slider 改写内存状态立即生效，后台通过协程 Flow `debounce(500ms)` 对 Preferences DataStore 写入节流，杜绝磁盘 I/O 阻塞。
+- **全局设定值动态复位与屏幕适配**：
+  - 切换到没有 Profile 配置的 App 时（"按App分别记录"关闭），全局设定值会立即恢复并重置到预设默认值：速度快速（持续时间 `500ms`）、间隔 `2s`（`2000ms`）、方向向下 (`DOWN`)。
+  - 默认滑动距离在获取或变化屏幕物理高度时会动态计算：`distanceRatio = (1500f / screenHeight).coerceIn(0.3f, 0.95f)`，确保在任意分辨率的视网膜屏设备上首次加载与复位时，物理滑动距离精准对齐为 `1500px`，克服了固定比例导致的高分屏 Jank。
 
 ## 3. 极限性能优化与零 GC 消耗设计 (Coroutines & Object Pooling)
 
@@ -59,6 +62,9 @@
   - 绝对禁止在滑动循环中重复 `new Path()`。在 Service 作用域内复用同一个 `android.graphics.Path` 对象，每次计算新轨迹前强制调用 `path.reset()`。
   - 采样点计算解耦为纯 JVM Kotlin 数据类返回，便于在本地 JVM 线程运行高覆盖率单测。
 - **无阻塞定时器**：使用协程的 `delay()` 挂起函数替代传统的定时器，确保等待期间 CPU 核心可进入休眠状态，极致省电。
+- **单元测试本地 JVM 兼容与防挂起设计**：
+  - 封装自定义日志 `PhantomLog`，在类加载时通过安全调用反射探针自动识别 JVM 单测环境，将 `Log.d` 等平台日志方法自动回退代理至标准控制台 `println`，避免发生 `Method not mocked` 崩溃。
+  - 对 `SettingsRepository` 构造器暴露可选属性 `enablePeriodicSave`（默认 `true`），单元测试在 `repoWith()` 时实例化传入 `false` 来直接规避 5 分钟 periodic saver 背景协程的无限 `delay` 循环，彻底根治了 `advanceUntilIdle()` 在虚拟时间推进时陷入死锁 hang 住测试套件的问题。
 
 ## 4. 工业级拟人化滑动算法 (Bezier Curve & Custom Interpolator)
 

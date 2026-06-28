@@ -11,6 +11,6 @@ class ScrollSettingsTest {
         assertEquals(500L, d.duration)
         assertEquals(2000L, d.interval)
         assertEquals(0.75f, d.distanceRatio)
-        assertEquals(ScrollDirection.UP, d.direction)
+        assertEquals(ScrollDirection.DOWN, d.direction)
     }
 }

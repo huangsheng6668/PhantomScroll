@@ -13,8 +13,8 @@ class MigrationMapperTest {
         assertEquals(700L, s.duration)
         assertEquals(4000L, s.interval)
         assertEquals(0.55f, s.distanceRatio)
-        // direction is a new field with no legacy source → default UP
-        assertEquals(ScrollDirection.UP, s.direction)
+        // direction is a new field with no legacy source → default DOWN
+        assertEquals(ScrollDirection.DOWN, s.direction)
     }
 
     @Test

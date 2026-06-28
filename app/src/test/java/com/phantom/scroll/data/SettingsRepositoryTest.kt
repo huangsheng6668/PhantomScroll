@@ -28,7 +28,7 @@ class SettingsRepositoryTest {
         val testDispatcher = checkNotNull(coroutineContext[CoroutineDispatcher]) {
             "TestScope must carry a CoroutineDispatcher"
         }
-        return SettingsRepository(store, repoScope, ioDispatcher = testDispatcher)
+        return SettingsRepository(store, repoScope, ioDispatcher = testDispatcher, enablePeriodicSave = false)
             .also { advanceUntilIdle() }
     }
 
@@ -75,12 +75,23 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun setCurrentPackage_resets_global_to_default_when_no_profile() = runTest {
+        val store = FakeProfileStore()
+        val repo = repoWith(store)
+        val custom = ScrollSettings(duration = 999L, interval = 9999L, distanceRatio = 0.99f, direction = ScrollDirection.UP)
+        repo.updateGlobal(custom)
+        assertEquals(custom, repo.global.value)
+        repo.setCurrentPackage("com.unknown.app")
+        assertEquals(ScrollSettings.DEFAULT, repo.global.value)
+    }
+
+    @Test
     fun updateGlobal_persists_after_debounce() = runTest {
         val store = FakeProfileStore()
         val repo = repoWith(store)
         val updated = ScrollSettings(duration = 650L, interval = 2200L, distanceRatio = 0.8f)
         repo.updateGlobal(updated)
-        advanceUntilIdle() // advance virtual time past 500ms debounce
+        repo.flush()
         assertEquals(updated, store.global)
     }
 
@@ -90,10 +101,10 @@ class SettingsRepositoryTest {
         val repo = repoWith(store)
         val s = ScrollSettings(duration = 500L, interval = 2000L, distanceRatio = 0.75f)
         repo.upsertProfile("com.a", s)
-        advanceUntilIdle()
+        repo.flush()
         assertEquals(s, store.profiles["com.a"]?.settings)
         repo.deleteProfile("com.a")
-        advanceUntilIdle()
+        repo.flush()
         assertNull(store.profiles["com.a"])
     }
 
@@ -114,7 +125,7 @@ class SettingsRepositoryTest {
         val store = FakeProfileStore()
         val repo = repoWith(store)
         repo.incrementStats(swipeDelta = 5, elapsedDeltaMs = 1000L)
-        advanceUntilIdle()
+        repo.flush()
         assertEquals(5L, store.stats.swipeCount)
     }
 
@@ -123,7 +134,7 @@ class SettingsRepositoryTest {
         val store = FakeProfileStore()
         val repo = repoWith(store)
         repo.setPerAppEnabled(true)
-        advanceUntilIdle()
+        repo.flush()
         assertTrue(store.perAppEnabled)
     }
 
@@ -147,11 +158,11 @@ class SettingsRepositoryTest {
     fun updateActive_writes_profile_when_perApp_on_and_pkg_known() = runTest {
         val store = FakeProfileStore()
         val repo = repoWith(store)
-        repo.setPerAppEnabled(true)
         repo.setCurrentPackage("com.example.novel")
+        repo.setPerAppEnabled(true)
         val s = ScrollSettings(duration = 600L, interval = 2000L, distanceRatio = 0.6f)
         repo.updateActive(s)
-        advanceUntilIdle()
+        repo.flush()
         assertEquals(s, store.profiles["com.example.novel"]?.settings)
         // global untouched
         assertEquals(ScrollSettings.DEFAULT, repo.global.value)
@@ -164,7 +175,7 @@ class SettingsRepositoryTest {
         // perApp default off, no currentPackage
         val s = ScrollSettings(duration = 650L, interval = 2100L, distanceRatio = 0.66f)
         repo.updateActive(s)
-        advanceUntilIdle()
+        repo.flush()
         assertEquals(s, repo.global.value)
         assertEquals(s, store.global)
         assertTrue(store.profiles.isEmpty())

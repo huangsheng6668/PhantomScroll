@@ -1,5 +1,3 @@
-@file:OptIn(kotlinx.coroutines.FlowPreview::class)
-
 package com.phantom.scroll.data
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -12,9 +10,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -38,7 +33,8 @@ class SettingsRepository(
      * persistence collectors. Defaults to [Dispatchers.IO] so high-frequency stat mutations
      * (one per swipe) never touch the main thread. Injectable for tests.
      */
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val enablePeriodicSave: Boolean = true
 ) {
     // ---- editable global defaults ----
     private val _global = MutableStateFlow(ScrollSettings.DEFAULT)
@@ -74,7 +70,27 @@ class SettingsRepository(
     val screenHeightMutable: MutableStateFlow<Int> get() = _screenHeight
 
     fun setScreenWidth(value: Int) { _screenWidth.value = value }
-    fun setScreenHeight(value: Int) { _screenHeight.value = value }
+    fun setScreenHeight(value: Int) {
+        _screenHeight.value = value
+        if (value > 0) {
+            val currentGlobal = _global.value
+            if (currentGlobal.distanceRatio == 0.75f) {
+                val targetRatio = (1500f / value).coerceIn(0.3f, 0.95f)
+                _global.value = currentGlobal.copy(distanceRatio = targetRatio)
+            }
+        }
+    }
+
+    fun getDefaultSettings(): ScrollSettings {
+        val h = _screenHeight.value
+        val ratio = if (h > 0) (1500f / h).coerceIn(0.3f, 0.95f) else 0.75f
+        return ScrollSettings(
+            duration = 500L,
+            interval = 2000L,
+            distanceRatio = ratio,
+            direction = ScrollDirection.DOWN
+        )
+    }
 
     /**
      * Resolved effective settings: the per-app profile for [currentPackage] when per-app is on,
@@ -103,38 +119,40 @@ class SettingsRepository(
             // Periodic saver runs on the IO dispatcher in the background.
             // It saves all settings every 5 minutes if any in-memory value has changed,
             // avoiding high-frequency disk I/O from slider drags.
-            launch {
-                var lastSavedGlobal = g
-                var lastSavedProfiles = p
-                var lastSavedPerApp = _perAppEnabled.value
-                var lastSavedStats = s
+            if (enablePeriodicSave) {
+                launch {
+                    var lastSavedGlobal = g
+                    var lastSavedProfiles = p
+                    var lastSavedPerApp = _perAppEnabled.value
+                    var lastSavedStats = s
 
-                while (isActive) {
-                    delay(5 * 60 * 1000L) // 5 minutes
-                    val currentGlobal = _global.value
-                    val currentProfiles = _profiles.value
-                    val currentPerApp = _perAppEnabled.value
-                    val currentStats = _stats.value
+                    while (isActive) {
+                        delay(5 * 60 * 1000L) // 5 minutes
+                        val currentGlobal = _global.value
+                        val currentProfiles = _profiles.value
+                        val currentPerApp = _perAppEnabled.value
+                        val currentStats = _stats.value
 
-                    if (currentGlobal != lastSavedGlobal ||
-                        currentProfiles != lastSavedProfiles ||
-                        currentPerApp != lastSavedPerApp ||
-                        currentStats != lastSavedStats
-                    ) {
-                        try {
-                            withContext(ioDispatcher) {
-                                store.saveGlobal(currentGlobal)
-                                store.saveAllProfiles(currentProfiles)
-                                store.savePerAppEnabled(currentPerApp)
-                                store.saveStats(currentStats)
+                        if (currentGlobal != lastSavedGlobal ||
+                            currentProfiles != lastSavedProfiles ||
+                            currentPerApp != lastSavedPerApp ||
+                            currentStats != lastSavedStats
+                        ) {
+                            try {
+                                withContext(ioDispatcher) {
+                                    store.saveGlobal(currentGlobal)
+                                    store.saveAllProfiles(currentProfiles)
+                                    store.savePerAppEnabled(currentPerApp)
+                                    store.saveStats(currentStats)
+                                }
+                                lastSavedGlobal = currentGlobal
+                                lastSavedProfiles = currentProfiles
+                                lastSavedPerApp = currentPerApp
+                                lastSavedStats = currentStats
+                                com.phantom.scroll.util.PhantomLog.d("SettingsRepository", "Periodic save (5 min): successfully recorded all values to disk.")
+                            } catch (e: Exception) {
+                                com.phantom.scroll.util.PhantomLog.e("SettingsRepository", "Periodic save failed: ${e.message}", e)
                             }
-                            lastSavedGlobal = currentGlobal
-                            lastSavedProfiles = currentProfiles
-                            lastSavedPerApp = currentPerApp
-                            lastSavedStats = currentStats
-                            com.phantom.scroll.util.PhantomLog.d("SettingsRepository", "Periodic save (5 min): successfully recorded all values to disk.")
-                        } catch (e: Exception) {
-                            com.phantom.scroll.util.PhantomLog.e("SettingsRepository", "Periodic save failed: ${e.message}", e)
                         }
                     }
                 }
@@ -215,7 +233,10 @@ class SettingsRepository(
         _currentPackage.value = packageName
         val hasProfile = packageName != null && _profiles.value.containsKey(packageName)
         _perAppEnabled.value = hasProfile
-        android.util.Log.e("PhantomScrollRepo", "setCurrentPackage: pkg=$packageName, hasProfile=$hasProfile, perAppEnabled=$hasProfile")
+        if (packageName != null && !hasProfile) {
+            _global.value = getDefaultSettings()
+        }
+        com.phantom.scroll.util.PhantomLog.d("SettingsRepository", "setCurrentPackage: pkg=$packageName, hasProfile=$hasProfile, perAppEnabled=$hasProfile")
     }
     fun setPerAppEnabled(enabled: Boolean) {
         _perAppEnabled.value = enabled

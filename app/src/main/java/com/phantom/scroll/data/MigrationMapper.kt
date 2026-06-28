@@ -13,6 +13,6 @@ object MigrationMapper {
         duration = duration ?: ScrollSettings.DEFAULT.duration,
         interval = interval ?: ScrollSettings.DEFAULT.interval,
         distanceRatio = ratio ?: ScrollSettings.DEFAULT.distanceRatio,
-        direction = ScrollDirection.UP // new field, no legacy source
+        direction = ScrollDirection.DOWN // new field, no legacy source
     )
 }
