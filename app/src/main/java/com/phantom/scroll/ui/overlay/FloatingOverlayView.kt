@@ -276,6 +276,7 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private fun applySettings(s: ScrollSettings) {
+        android.util.Log.e("PhantomScrollUI", "applySettings: duration=${s.duration}, interval=${s.interval}, ratio=${s.distanceRatio}, dir=${s.direction}")
         applyingFromFlow = true
         cellSpeed.setValue(s.duration.toFloat(), fromFlow = true)
         cellInterval.setValue(s.interval.toFloat(), fromFlow = true)

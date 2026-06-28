@@ -213,8 +213,9 @@ class SettingsRepository(
     }
     fun setCurrentPackage(packageName: String?) {
         _currentPackage.value = packageName
-        // Real-time update: automatically enable switch if a profile exists for this package
-        _perAppEnabled.value = packageName != null && _profiles.value.containsKey(packageName)
+        val hasProfile = packageName != null && _profiles.value.containsKey(packageName)
+        _perAppEnabled.value = hasProfile
+        android.util.Log.e("PhantomScrollRepo", "setCurrentPackage: pkg=$packageName, hasProfile=$hasProfile, perAppEnabled=$hasProfile")
     }
     fun setPerAppEnabled(enabled: Boolean) {
         _perAppEnabled.value = enabled
