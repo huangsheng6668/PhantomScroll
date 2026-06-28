@@ -83,9 +83,10 @@ class DataStoreProfileStore(private val context: Context) : ProfileStore {
 
     override suspend fun deleteProfile(packageName: String) {
         dataStore.edit { it ->
-            listOf("duration", "interval", "distanceRatio", "direction").forEach { field ->
-                it.remove(stringPreferencesKey("$PROFILE_PREFIX$packageName.$field"))
-            }
+            it.remove(longPreferencesKey("$PROFILE_PREFIX$packageName.duration"))
+            it.remove(longPreferencesKey("$PROFILE_PREFIX$packageName.interval"))
+            it.remove(floatPreferencesKey("$PROFILE_PREFIX$packageName.distanceRatio"))
+            it.remove(stringPreferencesKey("$PROFILE_PREFIX$packageName.direction"))
         }
     }
 

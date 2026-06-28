@@ -100,16 +100,31 @@ class PhantomScrollService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) {
-        val pkg = event?.packageName?.toString() ?: return
+        val event = event ?: return
+        val eventType = event.eventType
+        if (eventType != android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            eventType != android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        ) {
+            return
+        }
+
+        val pkg = event.packageName?.toString() ?: return
+        val currentPkg = repository.currentPackage.value
+
+        // Optimization: Skip high-frequency TYPE_WINDOW_CONTENT_CHANGED events if the package has not changed.
+        if (eventType == android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED && pkg == currentPkg) {
+            return
+        }
+
         val decision = perAppDetector.evaluate(
             eventPackage = pkg,
-            currentPackage = repository.currentPackage.value,
+            currentPackage = currentPkg,
             perAppEnabled = repository.perAppEnabled.value,
             nowMs = System.currentTimeMillis()
         )
         if (decision is PerAppDecision.Handle) {
             repository.setCurrentPackage(decision.packageToSet)
-            PhantomLog.d(TAG, "Per-app: currentPackage → ${decision.packageToSet}")
+            PhantomLog.d(TAG, "Per-app package switch: ${currentPkg ?: "null"} -> ${decision.packageToSet} (Event: ${android.view.accessibility.AccessibilityEvent.eventTypeToString(eventType)})")
         }
     }
 
