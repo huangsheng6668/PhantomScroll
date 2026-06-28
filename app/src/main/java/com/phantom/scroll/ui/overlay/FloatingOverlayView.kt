@@ -44,7 +44,10 @@ class FloatingOverlayView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : FrameLayout(context, attrs, defStyleAttr) {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var viewScope: CoroutineScope? = null
+    private fun launchOnScope(block: suspend CoroutineScope.() -> Unit) {
+        viewScope?.launch { block() }
+    }
     private var collectJob: Job? = null
 
     private var repository: SettingsRepository? = null
@@ -160,10 +163,10 @@ class FloatingOverlayView @JvmOverloads constructor(
         settingsButton.setOnClickListener { toggleSettings() }
         toggleBtn.setOnClickListener { repository?.toggleRunning() }
         resetBtn.setOnClickListener {
-            scope.launch { repository?.resetStats() }
+            launchOnScope { repository?.resetStats() }
         }
         forgetAppBtn.setOnClickListener {
-            scope.launch {
+            launchOnScope {
                 repository?.forgetActiveProfile()
                 toast("已忘记当前 App 配置")
             }
@@ -172,7 +175,7 @@ class FloatingOverlayView @JvmOverloads constructor(
             val repo = repository ?: return@setOnClickListener
             val active = repo.activeSettings.value
             val next = if (active.direction == ScrollDirection.UP) ScrollDirection.DOWN else ScrollDirection.UP
-            scope.launch { repo.updateActive(active.copy(direction = next)) }
+            launchOnScope { repo.updateActive(active.copy(direction = next)) }
         }
         perAppSwitch.setOnCheckedChangeListener(perAppChangeListener)
 
@@ -221,6 +224,8 @@ class FloatingOverlayView @JvmOverloads constructor(
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        viewScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        android.util.Log.e("PhantomScrollUI", "onAttachedToWindow: bound=$bound, viewScope created")
         if (bound) startCollecting()
     }
 
@@ -231,14 +236,18 @@ class FloatingOverlayView @JvmOverloads constructor(
         snapAnimator = null
         removeCallbacks(snapCompletionRunnable)
         collectJob?.cancel()
-        scope.cancel()
+        viewScope?.cancel()
+        viewScope = null
+        android.util.Log.e("PhantomScrollUI", "onDetachedFromWindow: viewScope cancelled and cleared")
         super.onDetachedFromWindow()
     }
 
     private fun startCollecting() {
         val repo = repository ?: return
         val flow = panelStateFlow ?: return
-        collectJob = scope.launch {
+        val activeScope = viewScope ?: return
+        android.util.Log.e("PhantomScrollUI", "startCollecting: starting coroutine flow collection")
+        collectJob = activeScope.launch {
             launch { flow.collect { applyState(it) } }
             launch { repo.activeSettings.collect { applySettings(it) } }
             launch { repo.isRunning.collect { applyRunning(it) } }
@@ -317,6 +326,7 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private fun applyPerAppEnabled(enabled: Boolean) {
+        android.util.Log.e("PhantomScrollUI", "applyPerAppEnabled: enabled=$enabled")
         perAppSwitch.setOnCheckedChangeListener(null)
         perAppSwitch.isChecked = enabled
         perAppSwitch.setOnCheckedChangeListener(perAppChangeListener)
@@ -324,6 +334,7 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private fun applyCurrentPackage(pkg: String?) {
+        android.util.Log.e("PhantomScrollUI", "applyCurrentPackage: pkg=$pkg")
         statusMeta.text = "前台 · ${pkg ?: "-"}"
         updatePerAppLabelVisibility()
     }
@@ -352,7 +363,7 @@ class FloatingOverlayView @JvmOverloads constructor(
 
     private fun updateActive(transform: (ScrollSettings) -> ScrollSettings) {
         val repo = repository ?: return
-        scope.launch { repo.updateActive(transform(repo.activeSettings.value)) }
+        launchOnScope { repo.updateActive(transform(repo.activeSettings.value)) }
     }
 
     private fun repositionToBounds(screenWidth: Int, screenHeight: Int) {
