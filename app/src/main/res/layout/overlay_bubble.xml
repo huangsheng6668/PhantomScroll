@@ -7,15 +7,15 @@
     android:layout_width="20dp"
     android:layout_height="20dp"
     android:background="@drawable/overlay_bubble_bg">
-    <!-- Ghost icon (green stroke nod to Phantom brand) -->
-    <TextView
+    <!-- Ghost icon (new cute webtoon mascot from launcher) -->
+    <ImageView
         android:id="@+id/bubble_icon"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:gravity="center"
-        android:text="👻"
-        android:textSize="11sp"
-        android:includeFontPadding="false" />
+        android:padding="2dp"
+        android:src="@mipmap/ic_launcher"
+        android:scaleType="fitCenter"
+        android:importantForAccessibility="no" />
     <!-- Count badge, top-end (kept small) -->
     <TextView
         android:id="@+id/bubble_count"
