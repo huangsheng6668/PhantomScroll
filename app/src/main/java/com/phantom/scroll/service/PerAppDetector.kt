@@ -30,10 +30,8 @@ class PerAppDetector(
     fun evaluate(
         eventPackage: String?,
         currentPackage: String?,
-        perAppEnabled: Boolean,
         nowMs: Long
     ): PerAppDecision {
-        if (!perAppEnabled) return PerAppDecision.Skip
         val pkg = eventPackage?.takeIf { it.isNotBlank() } ?: return PerAppDecision.Skip
         if (pkg == currentPackage) return PerAppDecision.Skip
         if (pkg == ownPackage || pkg in denylist) return PerAppDecision.Skip

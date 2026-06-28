@@ -119,7 +119,6 @@ class PhantomScrollService : AccessibilityService() {
         val decision = perAppDetector.evaluate(
             eventPackage = pkg,
             currentPackage = currentPkg,
-            perAppEnabled = repository.perAppEnabled.value,
             nowMs = System.currentTimeMillis()
         )
         if (decision is PerAppDecision.Handle) {
