@@ -157,8 +157,19 @@ class PhantomScrollService : AccessibilityService() {
 
     override fun onDestroy() {
         instance = null
-        PhantomLog.d(TAG, "Service being destroyed.")
+        PhantomLog.d(TAG, "Service being destroyed. Flushing settings...")
         repository.stopRunning()
+
+        // Flush settings to disk synchronously/blocking on IO to prevent losing latest changes
+        runBlocking {
+            try {
+                withTimeout(1000L) {
+                    repository.flush()
+                }
+            } catch (e: Exception) {
+                PhantomLog.e(TAG, "Failed to flush settings on destroy: ${e.message}")
+            }
+        }
 
         if (::floatingWindowController.isInitialized) floatingWindowController.stop()
         if (::scrollOrchestrator.isInitialized) scrollOrchestrator.stop()

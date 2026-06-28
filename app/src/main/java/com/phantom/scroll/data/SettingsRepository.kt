@@ -5,6 +5,8 @@ package com.phantom.scroll.data
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +32,7 @@ import kotlinx.coroutines.withContext
  */
 class SettingsRepository(
     private val store: ProfileStore,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
     /**
      * Dispatcher used for DataStore disk I/O and the debounce suspension/resume of the
      * persistence collectors. Defaults to [Dispatchers.IO] so high-frequency stat mutations
@@ -95,30 +97,50 @@ class SettingsRepository(
             _perAppEnabled.value = enabled
             _stats.value = s
 
-            // Start persistence collectors AFTER the initial load completes.
-            // drop(1) filters out the just-loaded values, collecting subsequent mutations only,
-            // which avoids a redundant startup write-back. The collectors are long-lived
-            // (infinite collect) and are children of [scope], so they are cancelled together
-            // with the repo's owner scope (e.g. serviceScope in PhantomScrollService).
-            //
-            // Each collector runs its debounce suspension/resume AND the DataStore write on
-            // [ioDispatcher] (flowOn upstream + withContext at the terminal), so the per-swipe
-            // stat churn never occupies the main thread.
-            launch {
-                _global.drop(1).debounce(PERSIST_DEBOUNCE_MS).flowOn(ioDispatcher)
-                    .collect { withContext(ioDispatcher) { store.saveGlobal(it) } }
+            // If current package already has a profile, auto-enable per-app
+            val currentPkg = _currentPackage.value
+            if (currentPkg != null && p.containsKey(currentPkg)) {
+                _perAppEnabled.value = true
             }
+
+            // Periodic saver runs on the IO dispatcher in the background.
+            // It saves all settings every 5 minutes if any in-memory value has changed,
+            // avoiding high-frequency disk I/O from slider drags.
             launch {
-                _profiles.drop(1).debounce(PERSIST_DEBOUNCE_MS).flowOn(ioDispatcher)
-                    .collect { withContext(ioDispatcher) { store.saveAllProfiles(it) } }
-            }
-            launch {
-                _perAppEnabled.drop(1).debounce(PERSIST_DEBOUNCE_MS).flowOn(ioDispatcher)
-                    .collect { withContext(ioDispatcher) { store.savePerAppEnabled(it) } }
-            }
-            launch {
-                _stats.drop(1).debounce(PERSIST_DEBOUNCE_MS).flowOn(ioDispatcher)
-                    .collect { withContext(ioDispatcher) { store.saveStats(it) } }
+                var lastSavedGlobal = g
+                var lastSavedProfiles = p
+                var lastSavedPerApp = enabled
+                var lastSavedStats = s
+
+                while (isActive) {
+                    delay(5 * 60 * 1000L) // 5 minutes
+                    val currentGlobal = _global.value
+                    val currentProfiles = _profiles.value
+                    val currentPerApp = _perAppEnabled.value
+                    val currentStats = _stats.value
+
+                    if (currentGlobal != lastSavedGlobal ||
+                        currentProfiles != lastSavedProfiles ||
+                        currentPerApp != lastSavedPerApp ||
+                        currentStats != lastSavedStats
+                    ) {
+                        try {
+                            withContext(ioDispatcher) {
+                                store.saveGlobal(currentGlobal)
+                                store.saveAllProfiles(currentProfiles)
+                                store.savePerAppEnabled(currentPerApp)
+                                store.saveStats(currentStats)
+                            }
+                            lastSavedGlobal = currentGlobal
+                            lastSavedProfiles = currentProfiles
+                            lastSavedPerApp = currentPerApp
+                            lastSavedStats = currentStats
+                            com.phantom.scroll.util.PhantomLog.d("SettingsRepository", "Periodic save (5 min): successfully recorded all values to disk.")
+                        } catch (e: Exception) {
+                            com.phantom.scroll.util.PhantomLog.e("SettingsRepository", "Periodic save failed: ${e.message}", e)
+                        }
+                    }
+                }
             }
         }
     }
@@ -129,6 +151,24 @@ class SettingsRepository(
         operator fun component2() = b
         operator fun component3() = c
         operator fun component4() = d
+    }
+
+    /**
+     * Flushes all current in-memory configurations directly to the persistent DataStore.
+     * Called on service destruction or important state changes to ensure zero data loss.
+     */
+    suspend fun flush() {
+        withContext(ioDispatcher) {
+            try {
+                store.saveGlobal(_global.value)
+                store.saveAllProfiles(_profiles.value)
+                store.savePerAppEnabled(_perAppEnabled.value)
+                store.saveStats(_stats.value)
+                com.phantom.scroll.util.PhantomLog.d("SettingsRepository", "Flush: all settings successfully written to disk.")
+            } catch (e: Exception) {
+                com.phantom.scroll.util.PhantomLog.e("SettingsRepository", "Flush failed: ${e.message}", e)
+            }
+        }
     }
 
     // ---- mutations ----
@@ -153,6 +193,14 @@ class SettingsRepository(
     suspend fun forgetActiveProfile() {
         val pkg = _currentPackage.value ?: return
         deleteProfile(pkg)
+        withContext(ioDispatcher) {
+            try {
+                store.deleteProfile(pkg)
+                store.saveAllProfiles(_profiles.value) // Flush remaining profiles
+            } catch (e: Exception) {
+                com.phantom.scroll.util.PhantomLog.e("SettingsRepository", "Failed to delete profile for $pkg: ${e.message}")
+            }
+        }
     }
 
     suspend fun upsertProfile(packageName: String, settings: ScrollSettings) {
@@ -165,8 +213,22 @@ class SettingsRepository(
             current - packageName
         }
     }
-    fun setCurrentPackage(packageName: String?) { _currentPackage.value = packageName }
-    fun setPerAppEnabled(enabled: Boolean) { _perAppEnabled.value = enabled }
+    fun setCurrentPackage(packageName: String?) {
+        _currentPackage.value = packageName
+        if (packageName != null && _profiles.value.containsKey(packageName)) {
+            _perAppEnabled.value = true
+        }
+    }
+    fun setPerAppEnabled(enabled: Boolean) {
+        _perAppEnabled.value = enabled
+        scope.launch(ioDispatcher) {
+            try {
+                store.savePerAppEnabled(enabled)
+            } catch (e: Exception) {
+                com.phantom.scroll.util.PhantomLog.e("SettingsRepository", "Failed to save perAppEnabled: ${e.message}")
+            }
+        }
+    }
     fun setRunning(value: Boolean) { _isRunning.value = value }
     /** Stops autoscroll (runtime-only). Used by failure auto-pause and external stop. */
     fun stopRunning() { setRunning(false) }
