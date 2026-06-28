@@ -223,7 +223,15 @@ class SettingsRepository(
             scope.launch {
                 if (enabled) {
                     // Automatically clone global settings when enabling per-app config for the first time
-                    upsertProfile(pkg, _global.value)
+                    val clone = _global.value
+                    upsertProfile(pkg, clone)
+                    withContext(ioDispatcher) {
+                        try {
+                            store.saveProfile(AppProfile(pkg, clone))
+                        } catch (e: Exception) {
+                            com.phantom.scroll.util.PhantomLog.e("SettingsRepository", "Failed to save profile: ${e.message}")
+                        }
+                    }
                 } else {
                     // Turn off per-app config: delete this package's profile so it reverts to global
                     deleteProfile(pkg)

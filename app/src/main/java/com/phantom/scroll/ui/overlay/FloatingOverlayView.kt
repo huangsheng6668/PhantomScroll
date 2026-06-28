@@ -4,10 +4,12 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.util.AttributeSet
 import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.animation.AlphaAnimation
+import android.widget.CompoundButton
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.core.content.res.ResourcesCompat
@@ -89,6 +91,9 @@ class FloatingOverlayView @JvmOverloads constructor(
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private var snapAnimator: ValueAnimator? = null
     private var applyingFromFlow = false
+    private val perAppChangeListener = CompoundButton.OnCheckedChangeListener { _, checked ->
+        repository?.setPerAppEnabled(checked)
+    }
     /**
      * Reusable scratch array for [View.getLocationOnScreen], avoiding a per-DOWN `IntArray(2)`
      * allocation on the UI thread during dragging.
@@ -118,14 +123,16 @@ class FloatingOverlayView @JvmOverloads constructor(
     private fun collapsedWidthPx() = (OverlayGeometry.COLLAPSED_WIDTH_DP * density).toInt()
 
     init {
-        inflate(context, R.layout.overlay_panel, this)
-        // BubbleView inflates overlay_bubble.xml itself; just add one (avoids duplicate bubble_root IDs).
-        // Starts GONE — applyState(Collapsed) makes it visible. The inner bubble_root is always
-        // visible (its content), so only this outer wrapper's visibility needs toggling.
-        bubble = BubbleView(context).also {
-            it.visibility = GONE
-            addView(it, LayoutParams(collapsedWidthPx(), collapsedWidthPx()))
-        }
+        val view = LayoutInflater.from(context).inflate(R.layout.overlay_panel, this, true)
+        // Set layout params for whole panel
+        layoutParams = LayoutParams(
+            LayoutParams.WRAP_CONTENT,
+            LayoutParams.WRAP_CONTENT
+        )
+
+        bubble = BubbleView(context)
+        bubble.visibility = GONE
+        addView(bubble, LayoutParams(collapsedWidthPx(), collapsedWidthPx()))
 
         panelRoot = findViewById(R.id.panel_root)
         settingsRoot = findViewById(R.id.settings_root)
@@ -167,10 +174,7 @@ class FloatingOverlayView @JvmOverloads constructor(
             val next = if (active.direction == ScrollDirection.UP) ScrollDirection.DOWN else ScrollDirection.UP
             scope.launch { repo.updateActive(active.copy(direction = next)) }
         }
-        perAppSwitch.setOnCheckedChangeListener { _, checked ->
-            if (applyingFromFlow) return@setOnCheckedChangeListener
-            repository?.setPerAppEnabled(checked)
-        }
+        perAppSwitch.setOnCheckedChangeListener(perAppChangeListener)
 
         applyState(PanelState.Expanded)
         applyRunning(false)
@@ -312,9 +316,9 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private fun applyPerAppEnabled(enabled: Boolean) {
-        applyingFromFlow = true
+        perAppSwitch.setOnCheckedChangeListener(null)
         perAppSwitch.isChecked = enabled
-        applyingFromFlow = false
+        perAppSwitch.setOnCheckedChangeListener(perAppChangeListener)
         updatePerAppLabelVisibility()
     }
 
