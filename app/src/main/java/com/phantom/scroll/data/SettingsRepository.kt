@@ -94,14 +94,11 @@ class SettingsRepository(
             }
             _global.value = g
             _profiles.value = p
-            _perAppEnabled.value = enabled
             _stats.value = s
 
-            // If current package already has a profile, auto-enable per-app
+            // Bind per-app switch status in real-time based on whether currentPackage has a profile
             val currentPkg = _currentPackage.value
-            if (currentPkg != null && p.containsKey(currentPkg)) {
-                _perAppEnabled.value = true
-            }
+            _perAppEnabled.value = currentPkg != null && p.containsKey(currentPkg)
 
             // Periodic saver runs on the IO dispatcher in the background.
             // It saves all settings every 5 minutes if any in-memory value has changed,
@@ -109,7 +106,7 @@ class SettingsRepository(
             launch {
                 var lastSavedGlobal = g
                 var lastSavedProfiles = p
-                var lastSavedPerApp = enabled
+                var lastSavedPerApp = _perAppEnabled.value
                 var lastSavedStats = s
 
                 while (isActive) {
@@ -193,6 +190,7 @@ class SettingsRepository(
     suspend fun forgetActiveProfile() {
         val pkg = _currentPackage.value ?: return
         deleteProfile(pkg)
+        _perAppEnabled.value = false
         withContext(ioDispatcher) {
             try {
                 store.deleteProfile(pkg)
@@ -215,17 +213,32 @@ class SettingsRepository(
     }
     fun setCurrentPackage(packageName: String?) {
         _currentPackage.value = packageName
-        if (packageName != null && _profiles.value.containsKey(packageName)) {
-            _perAppEnabled.value = true
-        }
+        // Real-time update: automatically enable switch if a profile exists for this package
+        _perAppEnabled.value = packageName != null && _profiles.value.containsKey(packageName)
     }
     fun setPerAppEnabled(enabled: Boolean) {
         _perAppEnabled.value = enabled
-        scope.launch(ioDispatcher) {
-            try {
-                store.savePerAppEnabled(enabled)
-            } catch (e: Exception) {
-                com.phantom.scroll.util.PhantomLog.e("SettingsRepository", "Failed to save perAppEnabled: ${e.message}")
+        val pkg = _currentPackage.value
+        if (pkg != null) {
+            scope.launch {
+                if (enabled) {
+                    // Automatically clone global settings when enabling per-app config for the first time
+                    upsertProfile(pkg, _global.value)
+                } else {
+                    // Turn off per-app config: delete this package's profile so it reverts to global
+                    deleteProfile(pkg)
+                    withContext(ioDispatcher) {
+                        try {
+                            store.deleteProfile(pkg)
+                            store.saveAllProfiles(_profiles.value)
+                        } catch (e: Exception) {
+                            com.phantom.scroll.util.PhantomLog.e("SettingsRepository", "Failed to delete profile: ${e.message}")
+                        }
+                    }
+                }
+                withContext(ioDispatcher) {
+                    store.savePerAppEnabled(enabled)
+                }
             }
         }
     }
