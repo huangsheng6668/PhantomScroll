@@ -3,7 +3,24 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-  <path
-      android:fillColor="#FFFFFFFF"
-      android:pathData="M12,2L4,10h5v4H4l8,8 8,-8h-5v-4h5L12,2z M12,5.83L16.17,10h-2.17v6h2.17L12,20.17 7.83,16h2.17v-6H7.83L12,5.83z"/>
+    <!-- Monochrome ghost silhouette matching the PhantomScroll launcher icon.
+         Notification small icons are tinted by the system, so the artwork must be
+         pure white + transparency. fillType="evenOdd" punches the two eye holes and
+         mouth out of the body so the ghost face stays recognizable even at status-bar size. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M4,12
+            C4,4 20,4 20,12
+            C20,19 16.5,20 12,19
+            C7.5,20 4,19 4,12 Z
+            M9,9.5
+            a1.2,1.2 0 1,0 2.4,0
+            a1.2,1.2 0 1,0 -2.4,0
+            M12.6,9.5
+            a1.2,1.2 0 1,0 2.4,0
+            a1.2,1.2 0 1,0 -2.4,0
+            M11,13
+            a1,1 0 1,0 2,0
+            a1,1 0 1,0 -2,0" />
 </vector>

@@ -361,7 +361,11 @@ class FloatingOverlayView @JvmOverloads constructor(
         } else {
             OverlayGeometry.clamp(currentX, 0, (screenWidth - widthPx).coerceAtLeast(0))
         }
-        val ny = OverlayGeometry.clamp(currentY, 0, (screenHeight - panelH).coerceAtLeast(0))
+        // Constrain the RESTING Y for the current orientation: in portrait, pull it into the
+        // corner-free safe band (curved-edge phones); in landscape, corners are fine so we just
+        // keep it on-screen. Dragging is unconstrained; only this resting position — set on
+        // size/config changes and not during a drag — is clamped.
+        val ny = OverlayGeometry.clampRestingY(currentY, screenWidth, screenHeight, panelH)
         if (nx != currentX || ny != currentY) {
             currentX = nx
             currentY = ny
@@ -453,18 +457,29 @@ class FloatingOverlayView @JvmOverloads constructor(
         val repo = repository ?: return
         val flow = panelStateFlow ?: return
         val screenWidth = repo.screenWidth.value
+        val screenHeight = repo.screenHeight.value
         val panelWidthPx = panelRoot.width.takeIf { it > 0 } ?: panelWidthPx()
+        val panelH = panelRoot.height.takeIf { it > 0 } ?: (260f * density).toInt()
         val target = OverlayGeometry.snapTarget(
             panelCenterX = currentX + panelWidthPx / 2,
             screenWidth = screenWidth,
             panelWidthPx = panelWidthPx
         )
         isLeftEdge = target.isLeftEdge
+        // Pull the resting Y to a valid resting point for the current orientation: portrait →
+        // corner-free safe band; landscape → corners allowed. A release in a portrait corner
+        // animates back to a reachable middle point instead of stranding the bubble on bent glass.
+        val targetY = OverlayGeometry.clampRestingY(currentY, screenWidth, screenHeight, panelH)
         flow.value = PanelState.Snapping
-        snapAnimator = ValueAnimator.ofInt(currentX, target.x).apply {
+        // Animate both axes to the resting point: X to the chosen edge, Y into the safe band.
+        val startX = currentX
+        val startY = currentY
+        snapAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 250
             addUpdateListener { a ->
-                currentX = a.animatedValue as Int
+                val t = a.animatedValue as Float
+                currentX = (startX + (target.x - startX) * t).toInt()
+                currentY = (startY + (targetY - startY) * t).toInt()
                 onUpdatePosition?.invoke(currentX, currentY)
             }
         }

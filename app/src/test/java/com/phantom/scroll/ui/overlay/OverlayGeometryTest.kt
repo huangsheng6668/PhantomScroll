@@ -52,4 +52,49 @@ class OverlayGeometryTest {
         assertEquals(240, OverlayGeometry.PANEL_WIDTH_DP)
         assertEquals(20, OverlayGeometry.COLLAPSED_WIDTH_DP)
     }
+
+    // ---- clampRestingY: portrait keeps the resting bubble off the four corners; landscape allows them ----
+
+    private val bandScreenW = 1080
+    private val bandScreenH = 2400
+    private val bandOverlayH = 200
+    // portrait safe band on 2400px: top 15% = 360, bottom 12% = 288 → band is [360, 2112 - 200] = [360, 1912]
+
+    @Test
+    fun restingY_portrait_pulls_top_corner_into_band() {
+        val y = OverlayGeometry.clampRestingY(y = 0, screenWidth = bandScreenW, screenHeight = bandScreenH, overlayH = bandOverlayH)
+        assertEquals(360, y)
+    }
+
+    @Test
+    fun restingY_portrait_pulls_bottom_corner_into_band() {
+        val y = OverlayGeometry.clampRestingY(y = bandScreenH, screenWidth = bandScreenW, screenHeight = bandScreenH, overlayH = bandOverlayH)
+        assertEquals(1912, y)
+    }
+
+    @Test
+    fun restingY_portrait_keeps_middle_untouched() {
+        val y = OverlayGeometry.clampRestingY(y = 1200, screenWidth = bandScreenW, screenHeight = bandScreenH, overlayH = bandOverlayH)
+        assertEquals(1200, y)
+    }
+
+    @Test
+    fun restingY_landscape_allows_top_corner() {
+        // landscape (2400 wide x 1080 tall): corners are fine → a release at y=0 stays at 0
+        val y = OverlayGeometry.clampRestingY(y = 0, screenWidth = bandScreenH, screenHeight = bandScreenW, overlayH = bandOverlayH)
+        assertEquals(0, y)
+    }
+
+    @Test
+    fun restingY_landscape_allows_bottom_corner() {
+        // landscape bottom corner: only kept on-screen (screenH - overlayH)
+        val y = OverlayGeometry.clampRestingY(y = bandScreenW, screenWidth = bandScreenH, screenHeight = bandScreenW, overlayH = bandOverlayH)
+        assertEquals(bandScreenW - bandOverlayH, y)
+    }
+
+    @Test
+    fun restingY_landscape_keeps_middle_untouched() {
+        val y = OverlayGeometry.clampRestingY(y = 500, screenWidth = bandScreenH, screenHeight = bandScreenW, overlayH = bandOverlayH)
+        assertEquals(500, y)
+    }
 }

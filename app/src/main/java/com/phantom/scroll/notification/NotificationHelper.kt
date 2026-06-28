@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.phantom.scroll.MainActivity
@@ -85,10 +87,18 @@ object NotificationHelper {
         val statusText = if (isRunning) "● 滑动中" else "○ 已暂停"
         val actionText = if (isRunning) "暂停" else "开始"
 
+        // The large icon shown in the notification shade. Rasterize the app's LAUNCHER icon via
+        // PackageManager.getApplicationIcon — this correctly resolves the ADAPTIVE icon
+        // (mipmap-anydpi-v26: background color + neon-ghost foreground) into a single Bitmap,
+        // which BitmapFactory cannot do for an adaptive XML. Keeps the shade icon identical to
+        // the home-screen icon instead of a mismatched legacy PNG.
+        val largeIcon = rasterizeAppIcon(context)
+
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("PhantomScroll")
             .setContentText("状态: $statusText")
             .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(largeIcon)
             .setColor(ContextCompat.getColor(context, R.color.overlay_accent))
             .setContentIntent(mainPendingIntent)
             .setOngoing(true)
@@ -97,5 +107,20 @@ object NotificationHelper {
             .addAction(0, actionText, togglePendingIntent)
             .addAction(0, "停止服务", stopPendingIntent)
             .build()
+    }
+
+    /**
+     * Draws the app's launcher icon (an adaptive icon on API 26+) onto a 48dp ARGB_8888 bitmap.
+     * PackageManager.getApplicationIcon returns the *resolved* drawable (background + foreground
+     * layers flattened for an adaptive icon), so the result matches the home-screen icon exactly.
+     */
+    private fun rasterizeAppIcon(context: Context): Bitmap {
+        val drawable = context.packageManager.getApplicationIcon(context.packageName)
+        val size = (48 * context.resources.displayMetrics.density).toInt()
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        drawable.setBounds(0, 0, size, size)
+        drawable.draw(canvas)
+        return bmp
     }
 }
