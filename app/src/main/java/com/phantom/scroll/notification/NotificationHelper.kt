@@ -87,12 +87,13 @@ object NotificationHelper {
         val statusText = if (isRunning) "● 滑动中" else "○ 已暂停"
         val actionText = if (isRunning) "暂停" else "开始"
 
-        // The large icon shown in the notification shade. Rasterize the app's LAUNCHER icon via
-        // PackageManager.getApplicationIcon — this correctly resolves the ADAPTIVE icon
-        // (mipmap-anydpi-v26: background color + neon-ghost foreground) into a single Bitmap,
-        // which BitmapFactory cannot do for an adaptive XML. Keeps the shade icon identical to
-        // the home-screen icon instead of a mismatched legacy PNG.
-        val largeIcon = rasterizeAppIcon(context)
+        // The large icon shown in the notification shade. Direct loading from R.mipmap.ic_launcher
+        // avoids system launcher icon cache issues on some ROMs after updating resources.
+        val largeIcon = try {
+            android.graphics.BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
+        } catch (e: Exception) {
+            rasterizeAppIcon(context)
+        }
 
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("PhantomScroll")
