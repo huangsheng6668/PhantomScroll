@@ -14,7 +14,7 @@ import com.phantom.scroll.MainActivity
 import com.phantom.scroll.R
 
 object NotificationHelper {
-    const val CHANNEL_ID = "phantom_scroll_service_channel"
+    const val CHANNEL_ID = "phantom_scroll_service_channel_v3"
     const val NOTIFICATION_ID = 4777
 
     // Broadcast actions for notification control buttons
