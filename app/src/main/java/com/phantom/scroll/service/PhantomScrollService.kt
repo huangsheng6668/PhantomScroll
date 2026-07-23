@@ -154,25 +154,27 @@ class PhantomScrollService : AccessibilityService() {
         PhantomLog.d(TAG, "Service being destroyed. Flushing settings...")
         repository.isRunning.value = false
 
-        // Non-blocking flush: launch on IO, await flush (with timeout), then tear down.
-        // A blocking main-thread call here was historically an ANR risk; this keeps
-        // shutdown off-main. (Inherited invariant: no main-thread blocking primitive
-        // may be reintroduced in this path.)
-        serviceScope.launch(Dispatchers.IO) {
-            try {
-                kotlinx.coroutines.withTimeout(1500L) { repository.flush() }
-            } catch (e: Exception) {
-                PhantomLog.e(TAG, "Failed to flush settings on destroy: ${e.message}")
+        // Synchronous main-thread teardown with bounded IO flush (max 1.5s timeout).
+        // removeView()/super.onDestroy() MUST run on the main thread; running them inside a
+        // background IO coroutine causes CalledFromWrongThreadException and lifecycle violations.
+        // runBlocking(Dispatchers.IO) confines only the disk flush to IO with a hard timeout,
+        // then teardown resumes synchronously on the main thread.
+        try {
+            runBlocking(Dispatchers.IO) {
+                withTimeout(1500L) { repository.flush() }
             }
-            if (::floatingWindowController.isInitialized) floatingWindowController.stop()
-            if (::scrollOrchestrator.isInitialized) scrollOrchestrator.stop()
-            if (::eventReceiver.isInitialized) eventReceiver.stop()
-            if (::keepAliveWindow.isInitialized) keepAliveWindow.hide()
-            KeepAliveService.stop(this@PhantomScrollService)
-            NotificationHelper.cancelNotification(this@PhantomScrollService)
-            serviceScope.cancel()
-            super@PhantomScrollService.onDestroy()
+        } catch (e: Exception) {
+            PhantomLog.e(TAG, "Failed to flush settings on destroy: ${e.message}")
         }
+
+        if (::floatingWindowController.isInitialized) floatingWindowController.stop()
+        if (::scrollOrchestrator.isInitialized) scrollOrchestrator.stop()
+        if (::eventReceiver.isInitialized) eventReceiver.stop()
+        if (::keepAliveWindow.isInitialized) keepAliveWindow.hide()
+        KeepAliveService.stop(this)
+        NotificationHelper.cancelNotification(this)
+        serviceScope.cancel()
+        super.onDestroy()
     }
 
     companion object {

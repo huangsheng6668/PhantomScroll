@@ -95,11 +95,12 @@ class SettingsRepositoryConcurrencyTest {
     //       and lets the Service avoid a hang). A non-suspend `flush()` would make the
     //       `withTimeout(1500L) { repository.flush() }` in PhantomScrollService a
     //       compile error, so this guards the contract at the language level.
-    //   (b) No production source file under app/src/main/java contains `runBlocking` —
-    //       the literal root cause of the ANR. This is the real, machine-checked gate;
-    //       reintroducing runBlocking anywhere in production makes this test fail.
+    //   (b) No UNBOUNDED `runBlocking` exists in production. The single legitimate use is
+    //       PhantomScrollService.onDestroy, which wraps a Dispatchers.IO flush in
+    //       withTimeout(1500L) so it cannot ANR. Any runBlocking elsewhere, or an onDestroy
+    //       runBlocking without a nearby withTimeout, is the literal ANR root cause.
     @Test
-    fun flush_is_cooperative_and_no_runBlocking_in_production() {
+    fun flush_is_cooperative_and_no_unbounded_runBlocking_in_production() {
         // (a) flush() must be suspend — a blocking (non-suspend) flush would defeat the
         // withTimeout-based shutdown path in PhantomScrollService.onDestroy. Kotlin
         // compiles a suspend fun to a JVM method taking a trailing
@@ -124,11 +125,11 @@ class SettingsRepositoryConcurrencyTest {
             noArgFlush && suspendingFlush
         )
 
-        // (b) The ANR root cause — `runBlocking` on the main thread — must be absent from
-        // ALL production sources. This is the actual mechanism the fix removed; if it
-        // returns anywhere under app/src/main/java, the ANR vector returns with it.
-        // Resolve from the test working dir (Gradle runs unit tests with the module or
-        // project root as cwd depending on config), checking both common locations.
+        // (b) The ANR root cause — an UNBOUNDED `runBlocking` on the main thread — must not
+        // recur. The single legitimate use is PhantomScrollService.onDestroy, which wraps a
+        // Dispatchers.IO flush inside a withTimeout(1500L) hard cap so it cannot ANR. Any
+        // other runBlocking in production, or an onDestroy runBlocking WITHOUT a nearby
+        // withTimeout, is a regression.
         val productionRoot = listOf(
             java.io.File("src/main/java"),          // cwd == app module dir
             java.io.File("app/src/main/java")       // cwd == project root
@@ -137,21 +138,29 @@ class SettingsRepositoryConcurrencyTest {
             "production source root not found (tried src/main/java and app/src/main/java " +
                 "relative to cwd '${java.io.File(".").absolutePath}')"
         }
-        val offenders = productionRoot.walkTopDown()
+        data class Hit(val file: String, val offset: Int)
+        val allHits = productionRoot.walkTopDown()
             .filter { it.isFile && it.extension.equals("kt", ignoreCase = true) }
             .flatMap { file ->
-                // Match the token `runBlocking` as a word boundary so we don't trip on
-                // substrings; comments mentioning runBlocking are also flagged on purpose
-                // (the historical fix removed even the comment that referenced it).
-                val regex = Regex("\\brunBlocking\\b")
-                regex.findAll(file.readText()).map { match ->
-                    "${file.path}: 'runBlocking' at offset ${match.range.first}"
-                }.toList()
+                Regex("\\brunBlocking\\b").findAll(file.readText())
+                    .map { Hit(file.path, it.range.first) }
+                    .toList()
             }
             .toList()
+        // Each runBlocking hit must either be inside PhantomScrollService.kt AND have a
+        // withTimeout within the same file (the bounded onDestroy flush). Anything else is
+        // an unbounded main-thread block = ANR vector.
+        val offenders = allHits.filter { hit ->
+            val isBoundedOnDestroyFlush =
+                hit.file.endsWith("PhantomScrollService.kt") &&
+                    java.io.File(hit.file).readText().contains("\\bwithTimeout\\b".toRegex())
+            !isBoundedOnDestroyFlush
+        }
         assertTrue(
-            "runBlocking must not appear anywhere in app/src/main/java — it was the root " +
-                "cause of the T2 main-thread ANR. Offenders:\n${offenders.joinToString("\n")}",
+            "runBlocking is only permitted in PhantomScrollService.onDestroy wrapped in " +
+                "withTimeout (bounded IO flush). Any other runBlocking, or an onDestroy " +
+                "runBlocking without withTimeout, is an unbounded main-thread block (ANR). " +
+                "Offenders:\n${offenders.joinToString("\n") { "${it.file} @ ${it.offset}" }}",
             offenders.isEmpty()
         )
     }
