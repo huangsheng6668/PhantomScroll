@@ -46,7 +46,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     }
                     NotificationHelper.ACTION_STOP -> {
                         PhantomLog.d(TAG, "Stopping service via notification.")
-                        activeService.repository.stopRunning()
+                        activeService.repository.isRunning.value = false
                         activeService.disableSelf()
                     }
                 }
