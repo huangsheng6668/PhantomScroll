@@ -20,7 +20,7 @@ class ServiceEventReceiver(
     private val onStopService: () -> Unit
 ) {
     private val TAG = "ServiceEventReceiver"
-    private val screenState = ScreenStateCoordinator(repository.isRunningMutable)
+    private val screenState = ScreenStateCoordinator(repository.isRunning)
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
