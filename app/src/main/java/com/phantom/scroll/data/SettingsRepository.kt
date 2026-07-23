@@ -5,7 +5,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Single source of truth for scroll settings, per-app profiles, stats and runtime flags.
@@ -33,6 +32,7 @@ import kotlinx.coroutines.withContext
  * Mutations enter only via [apply] (persistable) or the runtime mutators (isRunning /
  * screen size — non-persisted, no cross-field rules).
  */
+@OptIn(FlowPreview::class)
 class SettingsRepository(
     private val store: ProfileStore,
     private val scope: CoroutineScope,
@@ -72,7 +72,6 @@ class SettingsRepository(
         }.stateIn(scope, SharingStarted.Eagerly, ScrollSettings.DEFAULT)
 
     private val initialized = CompletableDeferred<Unit>()
-    private var persistenceJob: Job? = null
 
     init {
         scope.launch(ioDispatcher) {
@@ -96,7 +95,7 @@ class SettingsRepository(
     suspend fun awaitInitialized() = initialized.await()
 
     private fun startPersistenceCollector() {
-        persistenceJob = scope.launch(ioDispatcher) {
+        scope.launch(ioDispatcher) {
             combine(_global, _profiles, _perAppEnabled, _stats) { g, p, e, s ->
                 PersistableSnapshot(g, p, e, s)
             }.debounce(PERSIST_DEBOUNCE_MS)
