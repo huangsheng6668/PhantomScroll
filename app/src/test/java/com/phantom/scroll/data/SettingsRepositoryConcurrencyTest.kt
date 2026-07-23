@@ -72,30 +72,141 @@ class SettingsRepositoryConcurrencyTest {
         assertNotEquals(edited, repo.profiles.value["com.old"]?.settings)
     }
 
-    // Race 4 (T2): flush is non-blocking — runs on IO dispatcher, doesn't hang the caller.
+    // Race 4 (T2 ANR, fixed in PhantomScrollService.onDestroy): the historical ANR was
+    // caused by `runBlocking` executing on the main thread during service shutdown. The
+    // fix removed runBlocking from production and made `flush()` a cooperative `suspend`
+    // fun invoked under `withTimeout` on Dispatchers.IO.
+    //
+    // The pure "no ANR / no main-thread blocking" guarantee cannot be pinned by a unit
+    // test under runTest (there is no real main thread and no real dispatcher blocking
+    // in virtual time — the old test asserting `flush()` merely completes was
+    // near-tautological: it passed even if a regression reintroduced a blocking call).
+    //
+    // Option A (assert saveGlobal runs on the IO dispatcher, not the caller's) is NOT
+    // feasible WITHOUT changing production code: `flush()` deliberately runs
+    // `savePersistable` inline on the caller's dispatcher — its contract (documented on
+    // `flush()` and honored by PhantomScrollService.onDestroy, which launches it on
+    // Dispatchers.IO) is that the CALLER offloads to IO. That is the intended design,
+    // not a bug, so Option A would test a property the code does not have.
+    //
+    // This test therefore pins the ACTUAL regression mechanism (Option B, strengthened):
+    //   (a) `flush()` is declared `suspend` — so it can be cancelled cooperatively by
+    //       `withTimeout` on the caller side (the runtime property that bounds shutdown
+    //       and lets the Service avoid a hang). A non-suspend `flush()` would make the
+    //       `withTimeout(1500L) { repository.flush() }` in PhantomScrollService a
+    //       compile error, so this guards the contract at the language level.
+    //   (b) No production source file under app/src/main/java contains `runBlocking` —
+    //       the literal root cause of the ANR. This is the real, machine-checked gate;
+    //       reintroducing runBlocking anywhere in production makes this test fail.
     @Test
-    fun flush_completes_without_blocking() = runTest {
-        val store = FakeProfileStore()
-        val repo = repoWith(store)
-        repo.apply(SettingsIntent.PresetApplied(ScrollSettings(duration = 700L, interval = 4000L, distanceRatio = 0.55f)))
-        repo.flush() // suspend; completes within virtual time
-        assertEquals(700L, store.global.duration)
+    fun flush_is_cooperative_and_no_runBlocking_in_production() {
+        // (a) flush() must be suspend — a blocking (non-suspend) flush would defeat the
+        // withTimeout-based shutdown path in PhantomScrollService.onDestroy. Kotlin
+        // compiles a suspend fun to a JVM method taking a trailing
+        // kotlin.coroutines.Continuation parameter (and the no-arg lookup throws
+        // NoSuchMethodException for a suspend fun). So we locate the overload WITH the
+        // Continuation parameter and assert it exists; a non-suspend flush would only
+        // have the no-arg overload, which we prove absent.
+        val noArgFlush = runCatching {
+            SettingsRepository::class.java.getMethod("flush")
+        }.isFailure
+        val suspendingFlush = runCatching {
+            SettingsRepository::class.java.getMethod(
+                "flush",
+                kotlin.coroutines.Continuation::class.java
+            )
+        }.isSuccess
+        assertTrue(
+            "flush() must be suspend (cooperative): a non-suspend flush would block the " +
+                "caller and reintroduce the T2 ANR (PhantomScrollService bounds shutdown via " +
+                "withTimeout { repository.flush() }). noArgFlushExists=$noArgFlush, " +
+                "suspendFlushExists=$suspendingFlush.",
+            noArgFlush && suspendingFlush
+        )
+
+        // (b) The ANR root cause — `runBlocking` on the main thread — must be absent from
+        // ALL production sources. This is the actual mechanism the fix removed; if it
+        // returns anywhere under app/src/main/java, the ANR vector returns with it.
+        // Resolve from the test working dir (Gradle runs unit tests with the module or
+        // project root as cwd depending on config), checking both common locations.
+        val productionRoot = listOf(
+            java.io.File("src/main/java"),          // cwd == app module dir
+            java.io.File("app/src/main/java")       // cwd == project root
+        ).firstOrNull { it.exists() }
+        checkNotNull(productionRoot) {
+            "production source root not found (tried src/main/java and app/src/main/java " +
+                "relative to cwd '${java.io.File(".").absolutePath}')"
+        }
+        val offenders = productionRoot.walkTopDown()
+            .filter { it.isFile && it.extension.equals("kt", ignoreCase = true) }
+            .flatMap { file ->
+                // Match the token `runBlocking` as a word boundary so we don't trip on
+                // substrings; comments mentioning runBlocking are also flagged on purpose
+                // (the historical fix removed even the comment that referenced it).
+                val regex = Regex("\\brunBlocking\\b")
+                regex.findAll(file.readText()).map { match ->
+                    "${file.path}: 'runBlocking' at offset ${match.range.first}"
+                }.toList()
+            }
+            .toList()
+        assertTrue(
+            "runBlocking must not appear anywhere in app/src/main/java — it was the root " +
+                "cause of the T2 main-thread ANR. Offenders:\n${offenders.joinToString("\n")}",
+            offenders.isEmpty()
+        )
     }
 
-    // Race 5 (commit ededb56): high-frequency writes collapse to a single persisted write per debounce.
+    // Race 5 (commit ededb56): high-frequency writes collapse to a bounded number of
+    // persisted writes per debounce window — NOT one disk write per apply(). Asserting
+    // only the final value (last-write-wins) would pass even with debounce REMOVED, so
+    // this test additionally asserts the global save COUNT is small and bounded. Without
+    // the debounce operator, N rapid apply() calls would yield ~N saveGlobal invocations
+    // (one per combine() emission reaching the collector); with debounce they collapse
+    // to one emission after the 500ms quiet window.
     @Test
     fun debounce_collapses_high_frequency_writes() = runTest {
         val store = FakeProfileStore()
         val repo = repoWith(store)
-        repeat(10) { i ->
+        val n = 20
+        // Baseline after init/drain: reconcile may have produced a save or two on some
+        // flows; capture it so the burst delta is measured cleanly.
+        advanceUntilIdle()
+        val savesBeforeWrites = store.globalSaveCount.get()
+
+        // Fire N rapid writes with NO virtual time advancing in between, so they all
+        // land inside one 500ms debounce window.
+        repeat(n) { i ->
             repo.apply(SettingsIntent.PresetApplied(ScrollSettings(duration = (500L + i), interval = 2000L, distanceRatio = 0.7f)))
         }
-        // Before debounce elapses, disk still holds the seed/default.
-        // advance past debounce window.
+
+        // DELAY assertion: with debounce present, NONE of the in-flight writes have
+        // reached disk yet — the collector's emission is parked behind the 500ms timer.
+        // (runTest's StandardTestDispatcher only advances virtual time on
+        // advanceTimeBy/advanceUntilIdle; the repeat() loop above did not advance time.)
+        assertEquals(
+            "no save should occur while writes are still arriving inside the debounce window",
+            savesBeforeWrites, store.globalSaveCount.get()
+        )
+
+        // Now let the 500ms debounce window elapse so the single collapsed emission fires.
         advanceTimeBy(600)
         advanceUntilIdle()
-        // Disk reflects the last value; intermediate ones collapsed.
-        assertEquals(509L, store.global.duration)
+
+        // COLLAPSE assertion: the save delta must be SMALL and BOUNDED, NOT == n.
+        // The clean expectation is exactly 1 (one collapsed post-debounce emission).
+        // Tolerance: allow 1..2 to absorb an off-by-one in combine().debounce() under
+        // virtual time (a leading emission at the window boundary could yield one extra).
+        // This still FAILS if debounce were removed: the collector would emit once per
+        // apply() and the delta would be ~n=20.
+        val delta = store.globalSaveCount.get() - savesBeforeWrites
+        assertTrue(
+            "debounce must collapse $n writes to a bounded count; got $delta saves " +
+                "(expected 1..2). Without debounce this would be ~$n.",
+            delta in 1..2
+        )
+
+        // Last-write-wins still holds: the persisted value is the final preset (500 + (n-1) = 519L).
+        assertEquals(519L, store.global.duration)
     }
 
     // Race 6: flush on shutdown does not lose the last change.

@@ -155,7 +155,9 @@ class PhantomScrollService : AccessibilityService() {
         repository.isRunning.value = false
 
         // Non-blocking flush: launch on IO, await flush (with timeout), then tear down.
-        // runBlocking on the main thread was an ANR risk; this keeps shutdown off-main.
+        // A blocking main-thread call here was historically an ANR risk; this keeps
+        // shutdown off-main. (Inherited invariant: no main-thread blocking primitive
+        // may be reintroduced in this path.)
         serviceScope.launch(Dispatchers.IO) {
             try {
                 kotlinx.coroutines.withTimeout(1500L) { repository.flush() }
