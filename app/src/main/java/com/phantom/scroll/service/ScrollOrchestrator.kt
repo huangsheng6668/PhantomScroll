@@ -278,7 +278,7 @@ class ScrollOrchestrator(
             }
             FailureDecision.AutoPause -> {
                 PhantomLog.e(TAG, "Threshold reached → auto-pausing.")
-                repository.stopRunning()
+                repository.isRunning.value = false
                 Toast.makeText(service, "⚠️ 连续三次滑动失败，已自动暂停", Toast.LENGTH_SHORT).show()
             }
         }
