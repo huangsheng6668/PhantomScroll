@@ -7,12 +7,11 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
-import android.widget.TextView
+import android.widget.ImageView
 import com.phantom.scroll.R
 
 /**
- * Collapsed overlay bubble: 56dp circle + live count badge. Imperative refresh only;
- * [setCount] short-circuits identical text to avoid layout passes at ~0.6 swipe/sec.
+ * Collapsed overlay bubble: a 20dp circle carrying the mascot icon. Imperative only.
  *
  * Carries an elevation shadow (the redesign mockup's box-shadow) so the white circle stays
  * visible against light app backgrounds — without it a white bubble vanishes on white pages.
@@ -23,11 +22,19 @@ class BubbleView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : FrameLayout(context, attrs, defStyleAttr) {
 
-    private val countView: TextView
-
     init {
         LayoutInflater.from(context).inflate(R.layout.overlay_bubble, this, true)
-        countView = findViewById(R.id.bubble_count)
+        // Clip the square launcher icon to the bubble's circle: the icon's content area
+        // (16dp square) has a larger diagonal than the 20dp circle's radius, so without
+        // clipping its corners poke past the oval background.
+        findViewById<ImageView>(R.id.bubble_icon)?.let { icon ->
+            icon.outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) {
+                    outline.setOval(0, 0, view.width, view.height)
+                }
+            }
+            icon.clipToOutline = true
+        }
         // Circular outline + elevation → drop shadow that pops the bubble off any background.
         outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {
@@ -35,11 +42,5 @@ class BubbleView @JvmOverloads constructor(
             }
         }
         elevation = 6f * resources.displayMetrics.density
-    }
-
-    /** Renders [count] via [BadgeFormatter]; skips setText when unchanged. */
-    fun setCount(count: Int) {
-        val text = BadgeFormatter.format(count)
-        if (countView.text.toString() != text) countView.text = text
     }
 }

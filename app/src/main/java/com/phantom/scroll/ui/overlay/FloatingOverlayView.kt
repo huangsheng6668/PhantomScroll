@@ -32,8 +32,8 @@ import kotlin.math.abs
 /**
  * Orchestrator for the redesigned overlay. Inflates the panel + bubble, collects
  * [SettingsRepository] flows to refresh imperative views, and emits user interactions back.
- * Holds NO business logic beyond view↔state binding. Param/badge logic lives in [ParamSteps] /
- * [BadgeFormatter]; geometry in [OverlayGeometry].
+ * Holds NO business logic beyond view↔state binding. Param logic lives in [ParamSteps];
+ * geometry in [OverlayGeometry].
  *
  * MUST be constructed with a Material3-themed context (Slider requires it); the controller wraps
  * the service context in [R.style.Theme_PhantomScroll_Overlay].
@@ -322,7 +322,6 @@ class FloatingOverlayView @JvmOverloads constructor(
         metricCount.text = stats.swipeCount.toString()
         val minutes = Math.round(stats.elapsedMs / 60000.0)
         metricElapsed.text = "约 $minutes 分钟"
-        bubble.setCount(stats.swipeCount.toInt())
     }
 
     private fun applyPerAppEnabled(enabled: Boolean) {
