@@ -32,7 +32,13 @@ data class SettingsDelta(
     val perAppEnabled: Boolean? = null,
     val currentPackage: String? = null,
     /** Whether currentPackage should be cleared (distinct from setting it to some string). */
-    val clearCurrentPackage: Boolean = false
+    val clearCurrentPackage: Boolean = false,
+    /**
+     * Wholesale replacement of the profiles map. Used only by [reconcileInitial] to push the
+     * disk-loaded profiles into the holder in one shot. Null means "leave the map unchanged".
+     * Mutating intents use [upsertedProfile] / [deletedPackage] instead.
+     */
+    val profiles: Map<String, AppProfile>? = null
 )
 
 /**
@@ -98,7 +104,8 @@ object SettingsReducer {
             deletedPackage = null,
             perAppEnabled = loaded.perAppEnabled,
             currentPackage = null,
-            clearCurrentPackage = true
+            clearCurrentPackage = true,
+            profiles = loaded.profiles
         )
     }
 }

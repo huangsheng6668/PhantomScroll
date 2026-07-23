@@ -158,6 +158,7 @@ class SettingsRepository(
         if (delta.deletedPackage != null) {
             _profiles.update { it - delta.deletedPackage }
         }
+        delta.profiles?.let { loaded -> _profiles.value = loaded }
         delta.perAppEnabled?.let { _perAppEnabled.value = it }
         if (delta.clearCurrentPackage) {
             _currentPackage.value = null
