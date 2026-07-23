@@ -18,6 +18,7 @@ import com.phantom.scroll.R
 import com.phantom.scroll.data.ScrollDirection
 import com.phantom.scroll.data.ScrollSettings
 import com.phantom.scroll.data.ScrollStats
+import com.phantom.scroll.data.SettingsIntent
 import com.phantom.scroll.data.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -95,7 +96,7 @@ class FloatingOverlayView @JvmOverloads constructor(
     private var snapAnimator: ValueAnimator? = null
     private var applyingFromFlow = false
     private val perAppChangeListener = CompoundButton.OnCheckedChangeListener { _, checked ->
-        repository?.setPerAppEnabled(checked)
+        repository?.apply(SettingsIntent.PerAppToggled(checked))
     }
     /**
      * Reusable scratch array for [View.getLocationOnScreen], avoiding a per-DOWN `IntArray(2)`
@@ -167,7 +168,7 @@ class FloatingOverlayView @JvmOverloads constructor(
         }
         forgetAppBtn.setOnClickListener {
             launchOnScope {
-                repository?.forgetActiveProfile()
+                repository?.apply(SettingsIntent.ForgetActiveApp)
                 toast("已忘记当前 App 配置")
             }
         }
@@ -175,7 +176,7 @@ class FloatingOverlayView @JvmOverloads constructor(
             val repo = repository ?: return@setOnClickListener
             val active = repo.activeSettings.value
             val next = if (active.direction == ScrollDirection.UP) ScrollDirection.DOWN else ScrollDirection.UP
-            launchOnScope { repo.updateActive(active.copy(direction = next)) }
+            launchOnScope { repo.apply(SettingsIntent.SettingEdited { it.copy(direction = next) }) }
         }
         perAppSwitch.setOnCheckedChangeListener(perAppChangeListener)
 
@@ -200,9 +201,9 @@ class FloatingOverlayView @JvmOverloads constructor(
             valueFrom = 0.30f, valueTo = 0.95f,
             stepResolver = { ratio -> ParamSteps.toDistanceLabel(ratio, screenH()) }
         )
-        cellSpeed.onUserChange = { v -> updateActive { it.copy(duration = v.toLong()) } }
-        cellInterval.onUserChange = { v -> updateActive { it.copy(interval = v.toLong()) } }
-        cellDistance.onUserChange = { v -> updateActive { it.copy(distanceRatio = v) } }
+        cellSpeed.onUserChange = { v -> repository?.apply(SettingsIntent.SettingEdited { it.copy(duration = v.toLong()) }) }
+        cellInterval.onUserChange = { v -> repository?.apply(SettingsIntent.SettingEdited { it.copy(interval = v.toLong()) }) }
+        cellDistance.onUserChange = { v -> repository?.apply(SettingsIntent.SettingEdited { it.copy(distanceRatio = v) }) }
     }
 
     private fun screenH(): Int = repository?.screenHeight?.value ?: 1
@@ -225,7 +226,6 @@ class FloatingOverlayView @JvmOverloads constructor(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         viewScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        android.util.Log.e("PhantomScrollUI", "onAttachedToWindow: bound=$bound, viewScope created")
         if (bound) startCollecting()
     }
 
@@ -238,7 +238,6 @@ class FloatingOverlayView @JvmOverloads constructor(
         collectJob?.cancel()
         viewScope?.cancel()
         viewScope = null
-        android.util.Log.e("PhantomScrollUI", "onDetachedFromWindow: viewScope cancelled and cleared")
         super.onDetachedFromWindow()
     }
 
@@ -246,7 +245,6 @@ class FloatingOverlayView @JvmOverloads constructor(
         val repo = repository ?: return
         val flow = panelStateFlow ?: return
         val activeScope = viewScope ?: return
-        android.util.Log.e("PhantomScrollUI", "startCollecting: starting coroutine flow collection")
         collectJob = activeScope.launch {
             launch { flow.collect { applyState(it) } }
             launch { repo.activeSettings.collect { applySettings(it) } }
@@ -285,7 +283,6 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private fun applySettings(s: ScrollSettings) {
-        android.util.Log.e("PhantomScrollUI", "applySettings: duration=${s.duration}, interval=${s.interval}, ratio=${s.distanceRatio}, dir=${s.direction}")
         applyingFromFlow = true
         cellSpeed.setValue(s.duration.toFloat(), fromFlow = true)
         cellInterval.setValue(s.interval.toFloat(), fromFlow = true)
@@ -325,7 +322,6 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private fun applyPerAppEnabled(enabled: Boolean) {
-        android.util.Log.e("PhantomScrollUI", "applyPerAppEnabled: enabled=$enabled")
         perAppSwitch.setOnCheckedChangeListener(null)
         perAppSwitch.isChecked = enabled
         perAppSwitch.setOnCheckedChangeListener(perAppChangeListener)
@@ -333,7 +329,6 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private fun applyCurrentPackage(pkg: String?) {
-        android.util.Log.e("PhantomScrollUI", "applyCurrentPackage: pkg=$pkg")
         statusMeta.text = "前台 · ${pkg ?: "-"}"
         updatePerAppLabelVisibility()
     }
@@ -359,11 +354,6 @@ class FloatingOverlayView @JvmOverloads constructor(
 
     private fun toast(msg: String) =
         android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-
-    private fun updateActive(transform: (ScrollSettings) -> ScrollSettings) {
-        val repo = repository ?: return
-        launchOnScope { repo.updateActive(transform(repo.activeSettings.value)) }
-    }
 
     private fun repositionToBounds(screenWidth: Int, screenHeight: Int) {
         val flow = panelStateFlow
