@@ -6,6 +6,7 @@ import android.content.res.Configuration
 import android.view.WindowManager
 import android.widget.Toast
 import com.phantom.scroll.data.DataStoreProfileStore
+import com.phantom.scroll.data.SettingsIntent
 import com.phantom.scroll.data.SettingsRepository
 import com.phantom.scroll.notification.NotificationHelper
 import com.phantom.scroll.ui.overlay.PanelState
@@ -101,29 +102,23 @@ class PhantomScrollService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) {
         val event = event ?: return
-        val eventType = event.eventType
-        if (eventType != android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-            eventType != android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-        ) {
-            return
-        }
+        // Zero-overhead early-out when per-app is off (spec §3.4).
+        if (!repository.perAppEnabled.value) return
 
-        val pkg = event.packageName?.toString() ?: return
-        val currentPkg = repository.currentPackage.value
-
-        // Optimization: Skip high-frequency TYPE_WINDOW_CONTENT_CHANGED events if the package has not changed.
-        if (eventType == android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED && pkg == currentPkg) {
-            return
-        }
+        val pkg = PackageChangeExtractor.extract(
+            event.eventType,
+            event.packageName?.toString(),
+            repository.currentPackage.value
+        ) ?: return
 
         val decision = perAppDetector.evaluate(
             eventPackage = pkg,
-            currentPackage = currentPkg,
+            currentPackage = repository.currentPackage.value,
             nowMs = System.currentTimeMillis()
         )
         if (decision is PerAppDecision.Handle) {
-            repository.setCurrentPackage(decision.packageToSet)
-            PhantomLog.d(TAG, "Per-app package switch: ${currentPkg ?: "null"} -> ${decision.packageToSet} (Event: ${android.view.accessibility.AccessibilityEvent.eventTypeToString(eventType)})")
+            repository.apply(SettingsIntent.PackageSwitched(decision.packageToSet))
+            PhantomLog.d(TAG, "Per-app package switch -> ${decision.packageToSet}")
         }
     }
 
@@ -157,30 +152,25 @@ class PhantomScrollService : AccessibilityService() {
     override fun onDestroy() {
         instance = null
         PhantomLog.d(TAG, "Service being destroyed. Flushing settings...")
-        repository.stopRunning()
+        repository.isRunning.value = false
 
-        // Flush settings to disk synchronously/blocking on IO to prevent losing latest changes
-        runBlocking {
+        // Non-blocking flush: launch on IO, await flush (with timeout), then tear down.
+        // runBlocking on the main thread was an ANR risk; this keeps shutdown off-main.
+        serviceScope.launch(Dispatchers.IO) {
             try {
-                withTimeout(1000L) {
-                    repository.flush()
-                }
+                kotlinx.coroutines.withTimeout(1500L) { repository.flush() }
             } catch (e: Exception) {
                 PhantomLog.e(TAG, "Failed to flush settings on destroy: ${e.message}")
             }
+            if (::floatingWindowController.isInitialized) floatingWindowController.stop()
+            if (::scrollOrchestrator.isInitialized) scrollOrchestrator.stop()
+            if (::eventReceiver.isInitialized) eventReceiver.stop()
+            if (::keepAliveWindow.isInitialized) keepAliveWindow.hide()
+            KeepAliveService.stop(this@PhantomScrollService)
+            NotificationHelper.cancelNotification(this@PhantomScrollService)
+            serviceScope.cancel()
+            super@PhantomScrollService.onDestroy()
         }
-
-        if (::floatingWindowController.isInitialized) floatingWindowController.stop()
-        if (::scrollOrchestrator.isInitialized) scrollOrchestrator.stop()
-        if (::eventReceiver.isInitialized) eventReceiver.stop()
-        if (::keepAliveWindow.isInitialized) keepAliveWindow.hide()
-
-        // The foreground keep-alive is owned by KeepAliveService; stop it so the resident
-        // notification is removed when the accessibility service is being torn down.
-        KeepAliveService.stop(this)
-        NotificationHelper.cancelNotification(this)
-        serviceScope.cancel()
-        super.onDestroy()
     }
 
     companion object {
