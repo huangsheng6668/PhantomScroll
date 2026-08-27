@@ -12,7 +12,7 @@
 |--------|------|
 | 服务架构 | 合并为单一 `PhantomScrollService extends AccessibilityService` |
 | 项目名称 | PhantomScroll |
-| 锁屏行为 | 屏幕熄灭/锁屏后自动**暂停**滑动，亮屏后恢复 |
+| 锁屏行为 | 屏幕熄灭/锁屏后自动**暂停**滑动，亮屏后恢复（恢复意图持久化：息屏期间进程被杀，解锁后仍恢复） |
 | 滑动方向 | 支持**纵向滑动**（包含向上 UP 与向下 DOWN 滚动切换） |
 | compileSdk / targetSdk | API 35 (Android 15) |
 | minSdk | API 26 (Android 8.0) |
@@ -29,7 +29,7 @@
 - **引导页界面设计规范**：
   - **自绘矢量图标**：完全摒弃 Emoji 图标和外置图片资源，各卡片图标统一使用 Compose `Canvas` 进行矢量路径（`Path` / 二阶贝塞尔曲线 `quadraticTo`）纯代码手绘，实现 0 资源依赖和极致的视网膜屏显示精度。
   - **渐变进度环 (Summary Card)**：头部采用 Canvas 自定义绘制统计卡片，使用 `animateFloatAsState` 控制环形渐变进度平滑扫气动画，正中心使用 Monospace 字体展示 `已授予项/总项` 比例。
-  - **折叠展示组**：将 6 项权限科学分入必要、建议（后台保活）及可选三组卡片。“建议”与“可选”栏目外包 `AnimatedVisibility` 容器，支持带高度缓动拉伸动画的折叠与收起，点击 Toggle 条时箭头 `▴`/`▾` 会同步翻转。
+  - **折叠展示组**：将 5 项权限科学分入必要、建议（后台保活）及可选三组卡片。“建议”与“可选”栏目外包 `AnimatedVisibility` 容器，支持带高度缓动拉伸动画的折叠与收起，点击 Toggle 条时箭头 `▴`/`▾` 会同步翻转。（注：原第 6 项"使用情况访问权限"已移除——前台检测实际依赖无障碍窗口事件，该权限无功能消费方。）
   - **极简无按钮控制**：完全移除底部多余的全局“开始授权/刷新”大主按钮，将所有的交互完全剥离给各个卡片行的微光状态 Badge（`已开启 ✓` 与 `去授权`），简化用户的操作心理负担。
 - **拖拽与状态机**：利用自定义 View 的 `onTouchEvent` 与 `onInterceptTouchEvent` 拦截与监听用户拖拽。悬浮窗内部维护一个状态机（State）：`Expanded`（展开面板）、`Snapping`（吸附中动画）、`Collapsed`（边缘折叠手柄）。
 - **边缘吸附与折叠动画**：
@@ -42,15 +42,15 @@
 
 - **全局唯一真相源**：在 Service 内部引入 `data/` 层，通过 `SettingsRepository` 持有所有核心 `MutableStateFlow` 并进行集中状态分发。
 - **领域模型**：
-  - `ScrollSettings`：保存当前的 duration (速度)、interval (间隔)、distanceRatio (距离)、direction (方向)。
-  - `ScrollStats`：保存累计翻页次数与运行时长。
+  - `ScrollSettings`：保存当前的 duration (速度)、interval (间隔)、distanceRatio (距离)、direction (方向)，并持有 `SAFE_ZONE_HEIGHT_RATIO` 距离换算唯一口径。
   - `AppProfile`：存储前台特定 App 的定制化设置配置。
+  - （注：原 `ScrollStats` 运行统计模型与"点击重置"功能已随产品简化移除。）
 - **双向同步与节流落盘**：
   - 原生 View 中的 `Slider`、开关等交互控件通过观察 Repository 的 `StateFlow` 进行命令式刷新（零重组开销）。
   - 用户拖动 Slider 改写内存状态立即生效，后台通过协程 Flow `debounce(500ms)` 对 Preferences DataStore 写入节流，杜绝磁盘 I/O 阻塞。
 - **全局设定值动态复位与屏幕适配**：
   - 切换到没有 Profile 配置的 App 时（"按App分别记录"关闭），全局设定值会立即恢复并重置到预设默认值：速度快速（持续时间 `500ms`）、间隔 `2s`（`2000ms`）、方向向下 (`DOWN`)。
-  - 默认滑动距离在获取或变化屏幕物理高度时会动态计算：`distanceRatio = (1500f / screenHeight).coerceIn(0.3f, 0.95f)`，确保在任意分辨率的视网膜屏设备上首次加载与复位时，物理滑动距离精准对齐为 `1500px`，克服了固定比例导致的高分屏 Jank。
+  - 默认滑动距离在获取或变化屏幕物理高度时会动态计算：`distanceRatio = (1500f / (screenHeight × 0.7f)).coerceIn(0.3f, 0.95f)`（0.7 为安全区高度比例，见 `ScrollSettings.SAFE_ZONE_HEIGHT_RATIO`；引擎实际在屏幕 15%~85% 安全区内滑动），确保在任意分辨率的视网膜屏设备上首次加载与复位时，物理滑动距离精准对齐为 `1500px`，克服了固定比例导致的高分屏 Jank。
 
 ## 3. 极限性能优化与零 GC 消耗设计 (Coroutines & Object Pooling)
 
@@ -59,12 +59,12 @@
   - **UI 线程 (Dispatchers.Main.immediate)**：仅负责悬浮窗的拖拽手势响应、手柄折叠吸附动画。
   - **计算线程 (Dispatchers.Default)**：所有贝塞尔曲线轨迹点、随机噪声、时间加权算法必须在 `Dispatchers.Default` 中异步计算。
 - **对象复用 (Object Pooling)**：
-  - 绝对禁止在滑动循环中重复 `new Path()`。在 Service 作用域内复用同一个 `android.graphics.Path` 对象，每次计算新轨迹前强制调用 `path.reset()`。
+  - 绝对禁止在滑动循环中重复 `new Path()`。滑动算法已抽为独立纯 JVM 模块 `:gesture`（零 Android 依赖，计划以折线点列表表达）；`android.graphics.Path` 仅存在于 `:app` 侧的 `GestureDescriptionFactory` 适配器中，复用同一批 Path 对象，每次计算新轨迹前强制调用 `path.reset()`。
   - 采样点计算解耦为纯 JVM Kotlin 数据类返回，便于在本地 JVM 线程运行高覆盖率单测。
 - **无阻塞定时器**：使用协程的 `delay()` 挂起函数替代传统的定时器，确保等待期间 CPU 核心可进入休眠状态，极致省电。
 - **单元测试本地 JVM 兼容与防挂起设计**：
   - 封装自定义日志 `PhantomLog`，在类加载时通过安全调用反射探针自动识别 JVM 单测环境，将 `Log.d` 等平台日志方法自动回退代理至标准控制台 `println`，避免发生 `Method not mocked` 崩溃。
-  - 对 `SettingsRepository` 构造器暴露可选属性 `enablePeriodicSave`（默认 `true`），单元测试在 `repoWith()` 时实例化传入 `false` 来直接规避 5 分钟 periodic saver 背景协程的无限 `delay` 循环，彻底根治了 `advanceUntilIdle()` 在虚拟时间推进时陷入死锁 hang 住测试套件的问题。
+  - 持久化层已收敛为"初始加载完成后才启动的单一 `debounce(500ms)` collector + 销毁时 `flush()`"，不存在周期性后台协程，`advanceUntilIdle()` 无挂起风险；单测经 `FakeProfileStore` 与注入的测试调度器驱动。
 
 ## 4. 工业级拟人化滑动算法 (Bezier Curve & Custom Interpolator)
 
@@ -78,8 +78,8 @@
 
 ## 5. 产品化特性支持
 
-- **运行统计**：利用协程自动统计并更新已翻页次数与累计分钟，支持点击重置。
-- **按 App 记忆配置 (Per-App)**：前台包名变化检测（支持系统 denylist 过滤与 300ms 快速切换防抖），当开启该功能并调整 Slider 时，自动创建并持久化当前 App 的专属配置 profile；切换回普通应用时自动还原全局默认，长按标签即可忘记该 App 配置。
+- **按 App 记忆配置 (Per-App)**：前台包名变化检测（支持系统 denylist 过滤与 300ms 快速切换防抖 + 尾沿补偿：防抖窗口内的候选不丢失，且"回到当前包名"的事件会清除过期候选），当开启该功能并调整 Slider 时，自动创建并持久化当前 App 的专属配置 profile；切换回普通应用时自动还原全局默认，点击悬浮面板上的"忘记配置"按钮即可删除该 App 配置。
+- **节奏模型**：滑动周期 = 手势时长 + 用户设定间隔（仅叠加 ±8% 正态噪声）。不做任何超出噪声带的间隔拉长/门控——节奏可预期性优先。（注：原"运行统计"功能已随产品简化移除。）
 
 ## 6. 系统工程化收尾
 

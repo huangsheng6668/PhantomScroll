@@ -26,11 +26,12 @@ class ParamStepsTest {
 
     @Test
     fun distance_band_and_equivalent_px() {
-        // screenH 2400px
-        assertEquals("短距 720px", ParamSteps.toDistanceLabel(0.30f, 2400))  // 0.3*2400=720, <0.5 短
-        assertEquals("中距 1200px", ParamSteps.toDistanceLabel(0.50f, 2400)) // 边界 0.5→中
-        assertEquals("中距 1799px", ParamSteps.toDistanceLabel(0.7496f, 2400))
-        assertEquals("长距 1800px", ParamSteps.toDistanceLabel(0.75f, 2400)) // 边界 0.75→长
-        assertEquals("长距 2280px", ParamSteps.toDistanceLabel(0.95f, 2400))
+        // screenH 2400px → safe zone = 0.7 × 2400 = 1680px (the px shown must be the
+        // PHYSICAL swipe distance the engine produces: ratio × safe height).
+        assertEquals("短距 504px", ParamSteps.toDistanceLabel(0.30f, 2400))  // 0.3×1680=504, <0.5 短
+        assertEquals("中距 840px", ParamSteps.toDistanceLabel(0.50f, 2400)) // 边界 0.5→中, 0.5×1680=840
+        assertEquals("中距 1259px", ParamSteps.toDistanceLabel(0.7496f, 2400)) // 0.7496×1680=1259.3
+        assertEquals("长距 1260px", ParamSteps.toDistanceLabel(0.75f, 2400))  // 边界 0.75→长, 0.75×1680=1260
+        assertEquals("长距 1596px", ParamSteps.toDistanceLabel(0.95f, 2400))  // 0.95×1680=1596
     }
 }

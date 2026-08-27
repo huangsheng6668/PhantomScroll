@@ -1,5 +1,6 @@
 package com.phantom.scroll.data
 
+import com.phantom.scroll.gesture.ScrollDirection
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -36,7 +37,7 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun activeSettings_falls_back_to_global_when_perApp_disabled() = runTest {
+    fun activeSettings_falls_back_to_global_when_no_profile() = runTest {
         val repo = repoWith(FakeProfileStore())
         repo.apply(SettingsIntent.PackageSwitched("com.example.novel"))
         advanceUntilIdle()
@@ -44,7 +45,7 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun activeSettings_uses_profile_when_perApp_enabled_and_pkg_matches() = runTest {
+    fun activeSettings_uses_profile_when_current_pkg_recorded() = runTest {
         val profileSettings = ScrollSettings(duration = 999L, interval = 1111L, distanceRatio = 0.42f)
         val store = FakeProfileStore().apply {
             profiles["com.example.novel"] = AppProfile("com.example.novel", profileSettings)
@@ -94,7 +95,8 @@ class SettingsRepositoryTest {
         repo.apply(SettingsIntent.PerAppToggled(true))
         repo.flush()
         assertEquals(repo.global.value, store.profiles["com.a"]?.settings)
-        assertTrue(store.perAppEnabled)
+        advanceUntilIdle() // let the derived perAppEnabled flow process the upsert
+        assertTrue(repo.perAppEnabled.value) // derived: com.a is now recorded
     }
 
     @Test
@@ -106,27 +108,8 @@ class SettingsRepositoryTest {
         repo.apply(SettingsIntent.PerAppToggled(false))
         repo.flush()
         assertNull(store.profiles["com.a"])
-        assertFalse(store.perAppEnabled)
-    }
-
-    @Test
-    fun stats_increment_and_reset() = runTest {
-        val repo = repoWith(FakeProfileStore())
-        repo.incrementStats(swipeDelta = 1, elapsedDeltaMs = 2000L)
-        repo.incrementStats(swipeDelta = 1, elapsedDeltaMs = 3000L)
-        assertEquals(2L, repo.stats.value.swipeCount)
-        assertEquals(5000L, repo.stats.value.elapsedMs)
-        repo.resetStats()
-        assertEquals(ScrollStats.ZERO, repo.stats.value)
-    }
-
-    @Test
-    fun stats_persist_after_flush() = runTest {
-        val store = FakeProfileStore()
-        val repo = repoWith(store)
-        repo.incrementStats(swipeDelta = 5, elapsedDeltaMs = 1000L)
-        repo.flush()
-        assertEquals(5L, store.stats.swipeCount)
+        advanceUntilIdle() // let the derived perAppEnabled flow process the delete
+        assertFalse(repo.perAppEnabled.value) // derived: com.a no longer recorded
     }
 
     @Test
@@ -181,7 +164,57 @@ class SettingsRepositoryTest {
         repo.apply(SettingsIntent.ForgetActiveApp)
         repo.flush()
         assertNull(store.profiles["com.example.novel"])
+        advanceUntilIdle() // let the derived perAppEnabled flow process the delete
         assertFalse(repo.perAppEnabled.value)
+    }
+
+    /**
+     * Regression for the user-reported flows:
+     *  1. "切换App再切回原App时按钮就被关了"
+     *  2. "从A切到B，B根本没被记录；把开关关了，再切回A开关还是关的"
+     *
+     * With the derived per-app switch: each app shows its own recording state, toggling
+     * only affects the current app, and switching back to a recorded app shows ON again.
+     */
+    @Test
+    fun perApp_switch_state_is_per_app_across_switches() = runTest {
+        val store = FakeProfileStore()
+        val repo = repoWith(store)
+
+        // Record A (toggle ON in A).
+        repo.apply(SettingsIntent.PackageSwitched("com.a"))
+        repo.apply(SettingsIntent.PerAppToggled(true))
+        advanceUntilIdle()
+        assertTrue(repo.perAppEnabled.value) // A recorded → ON in A
+        assertTrue(store.profiles.containsKey("com.a"))
+
+        // Switch to B: B has no profile → switch shows OFF for B (B not recorded).
+        repo.apply(SettingsIntent.PackageSwitched("com.b"))
+        advanceUntilIdle()
+        assertFalse(repo.perAppEnabled.value)
+        assertFalse(store.profiles.containsKey("com.b")) // visiting does NOT record
+
+        // Toggle the switch OFF in B (no-op for profiles — B had none).
+        repo.apply(SettingsIntent.PerAppToggled(false))
+        advanceUntilIdle()
+
+        // Toggle ON in B records B (cloned from global).
+        repo.apply(SettingsIntent.PerAppToggled(true))
+        advanceUntilIdle()
+        assertTrue(store.profiles.containsKey("com.b"))
+        assertTrue(repo.perAppEnabled.value)
+
+        // Turn it OFF again in B: only B's profile goes away.
+        repo.apply(SettingsIntent.PerAppToggled(false))
+        advanceUntilIdle()
+        assertFalse(store.profiles.containsKey("com.b"))
+        assertTrue(store.profiles.containsKey("com.a")) // A untouched
+
+        // Back in A: A is still recorded → switch ON again.
+        repo.apply(SettingsIntent.PackageSwitched("com.a"))
+        advanceUntilIdle()
+        assertTrue(repo.perAppEnabled.value)
+        assertEquals(store.profiles["com.a"], repo.profiles.value["com.a"])
     }
 }
 

@@ -244,8 +244,7 @@ class SettingsRepositoryConcurrencyTest {
         repo.apply(SettingsIntent.PerAppToggled(true))
         advanceUntilIdle()
         repo.apply(SettingsIntent.ForgetActiveApp)
-        // After one apply(), both effects visible together (no intermediate inconsistent state).
+        // After one apply(), profile is removed while leaving global settings intact.
         assertNull(repo.profiles.value["com.a"])
-        assertFalse(repo.perAppEnabled.value)
     }
 }

@@ -82,6 +82,8 @@ android {
 }
 
 dependencies {
+    // Pure-JVM swipe-planning algorithm module (no Android dependency).
+    implementation(project(":gesture"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)

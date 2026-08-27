@@ -40,7 +40,7 @@ class KeepAliveService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        promoteToForeground(running = false)
+        promoteToForeground()
     }
 
     /**
@@ -50,12 +50,16 @@ class KeepAliveService : Service() {
      * ENABLED_ACCESSIBILITY_SERVICES, reconnects [PhantomScrollService]).
      */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        promoteToForeground(running = false)
+        promoteToForeground()
         return START_STICKY
     }
 
-    private fun promoteToForeground(running: Boolean) {
+    private fun promoteToForeground() {
         try {
+            // Reflect the REAL running state (the accessibility service, if connected, is
+            // initialized before this service starts) instead of hardcoding "paused" — the
+            // first frame of the resident notification then never contradicts reality.
+            val running = PhantomScrollService.instance?.repository?.isRunning?.value ?: false
             val notification = NotificationHelper.buildNotification(this, running)
             // Pass FOREGROUND_SERVICE_TYPE_MANIFEST (API 29+) so the system reads the type we
             // declared in the manifest (specialUse). This matches gkd's Notif.notifyService() and

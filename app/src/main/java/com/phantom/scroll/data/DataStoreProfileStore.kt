@@ -5,12 +5,12 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.migrations.SharedPreferencesMigration
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.phantom.scroll.gesture.ScrollDirection
 import kotlinx.coroutines.flow.first
 
 /**
@@ -28,11 +28,6 @@ class DataStoreProfileStore(private val context: Context) : ProfileStore {
         val INTERVAL = longPreferencesKey("global.interval")
         val RATIO = floatPreferencesKey("global.distanceRatio")
         val DIRECTION = stringPreferencesKey("global.direction")
-        // per-app
-        val PERAPP_ENABLED = booleanPreferencesKey("perapp.enabled")
-        // stats
-        val STATS_SWIPE = longPreferencesKey("stats.swipe")
-        val STATS_ELAPSED = longPreferencesKey("stats.elapsed")
     }
 
     override suspend fun loadGlobal(): ScrollSettings {
@@ -55,17 +50,6 @@ class DataStoreProfileStore(private val context: Context) : ProfileStore {
             .mapNotNull { profilePackageFromKey(it) }
             .toSet()
         return pkgs.associateWith { pkg -> AppProfile(pkg, loadProfileInternal(p, pkg)) }
-    }
-
-    override suspend fun loadPerAppEnabled(): Boolean =
-        dataStore.data.first()[Keys.PERAPP_ENABLED] ?: false
-
-    override suspend fun loadStats(): ScrollStats {
-        val p = dataStore.data.first()
-        return ScrollStats(
-            swipeCount = p[Keys.STATS_SWIPE] ?: 0L,
-            elapsedMs = p[Keys.STATS_ELAPSED] ?: 0L
-        )
     }
 
     override suspend fun saveGlobal(settings: ScrollSettings) {
@@ -97,17 +81,6 @@ class DataStoreProfileStore(private val context: Context) : ProfileStore {
                 if (key.name.startsWith(PROFILE_PREFIX)) it.remove(key)
             }
             profiles.values.forEach { profile -> writeProfile(it, profile.packageName, profile.settings) }
-        }
-    }
-
-    override suspend fun savePerAppEnabled(enabled: Boolean) {
-        dataStore.edit { it[Keys.PERAPP_ENABLED] = enabled }
-    }
-
-    override suspend fun saveStats(stats: ScrollStats) {
-        dataStore.edit { it ->
-            it[Keys.STATS_SWIPE] = stats.swipeCount
-            it[Keys.STATS_ELAPSED] = stats.elapsedMs
         }
     }
 

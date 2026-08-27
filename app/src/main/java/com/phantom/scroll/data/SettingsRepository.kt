@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Single source of truth for scroll settings, per-app profiles, stats and runtime flags.
+ * Single source of truth for scroll settings, per-app profiles and runtime flags.
  *
  * Three-layer design:
  *  1. StateHolder — the [MutableStateFlow]s below; only [applyDelta] writes to the
@@ -44,14 +44,21 @@ class SettingsRepository(
     private val _profiles = MutableStateFlow<Map<String, AppProfile>>(emptyMap())
     val profiles: StateFlow<Map<String, AppProfile>> = _profiles.asStateFlow()
 
-    private val _perAppEnabled = MutableStateFlow(false)
-    val perAppEnabled: StateFlow<Boolean> = _perAppEnabled.asStateFlow()
-
     private val _currentPackage = MutableStateFlow<String?>(null)
     val currentPackage: StateFlow<String?> = _currentPackage.asStateFlow()
 
-    private val _stats = MutableStateFlow(ScrollStats.ZERO)
-    val stats: StateFlow<ScrollStats> = _stats.asStateFlow()
+    /**
+     * Derived, NOT persisted: whether the CURRENT foreground app has its own recorded
+     * profile. This is exactly what the overlay's "按App分别记录" switch displays — every
+     * app shows its own recording state, and toggling only affects the current app
+     * (PerAppToggled upserts / deletes the current app's profile). The old design stored
+     * ONE global persisted flag, so the switch flip-flopped with the foreground app and
+     * turning it off in app B also turned it off in app A.
+     */
+    val perAppEnabled: StateFlow<Boolean> =
+        combine(_currentPackage, _profiles) { pkg, profiles ->
+            pkg != null && profiles.containsKey(pkg)
+        }.stateIn(scope, SharingStarted.Eagerly, false)
 
     private val _isRunning = MutableStateFlow(false)
     /** Backing mutable flow for components that drive isRunning directly (ScreenStateCoordinator). */
@@ -63,12 +70,14 @@ class SettingsRepository(
     val screenHeight: StateFlow<Int> = _screenHeight.asStateFlow()
 
     /**
-     * Resolved effective settings: the per-app profile for [currentPackage] when per-app is on,
-     * otherwise the global defaults. This is the single value gesture generation consumes.
+     * Resolved effective settings: the per-app profile for [currentPackage] when one is
+     * recorded, otherwise the global defaults. This is the single value gesture generation
+     * consumes. Profileless apps transparently fall back to global (spec: "切换回普通应用
+     * 时自动还原全局默认").
      */
     val activeSettings: StateFlow<ScrollSettings> =
-        combine(_perAppEnabled, _currentPackage, _profiles, _global) { enabled, pkg, profiles, global ->
-            if (enabled && pkg != null) profiles[pkg]?.settings ?: global else global
+        combine(_currentPackage, _profiles, _global) { pkg, profiles, global ->
+            if (pkg != null) profiles[pkg]?.settings ?: global else global
         }.stateIn(scope, SharingStarted.Eagerly, ScrollSettings.DEFAULT)
 
     private val initialized = CompletableDeferred<Unit>()
@@ -78,9 +87,7 @@ class SettingsRepository(
             // 1. Explicit load — blocks this coroutine (not the main thread).
             val loaded = LoadedState(
                 global = store.loadGlobal(),
-                profiles = store.loadProfiles(),
-                perAppEnabled = store.loadPerAppEnabled(),
-                stats = store.loadStats()
+                profiles = store.loadProfiles()
             )
             // 2. Reconcile defaults + screen-adapted distanceRatio exactly once.
             applyDelta(SettingsReducer.reconcileInitial(loaded, _screenHeight.value))
@@ -96,8 +103,8 @@ class SettingsRepository(
 
     private fun startPersistenceCollector() {
         scope.launch(ioDispatcher) {
-            combine(_global, _profiles, _perAppEnabled, _stats) { g, p, e, s ->
-                PersistableSnapshot(g, p, e, s)
+            combine(_global, _profiles) { g, p ->
+                PersistableSnapshot(g, p)
             }.debounce(PERSIST_DEBOUNCE_MS)
                 .collect { snapshot -> savePersistable(snapshot) }
         }
@@ -109,8 +116,6 @@ class SettingsRepository(
         try {
             store.saveGlobal(snapshot.global)
             store.saveAllProfiles(snapshot.profiles)
-            store.savePerAppEnabled(snapshot.perAppEnabled)
-            store.saveStats(snapshot.stats)
         } catch (e: Exception) {
             PhantomLog.e(TAG, "Persist failed (will retry on next change): ${e.message}", e)
         }
@@ -125,7 +130,7 @@ class SettingsRepository(
         // Wait for initial load so we don't flush defaults over real disk values.
         initialized.await()
         savePersistable(
-            PersistableSnapshot(_global.value, _profiles.value, _perAppEnabled.value, _stats.value)
+            PersistableSnapshot(_global.value, _profiles.value)
         )
     }
 
@@ -139,7 +144,6 @@ class SettingsRepository(
         val snapshot = SettingsSnapshot(
             global = _global.value,
             profiles = _profiles.value,
-            perAppEnabled = _perAppEnabled.value,
             currentPackage = _currentPackage.value
         )
         val delta = SettingsReducer.reduce(snapshot, intent)
@@ -158,7 +162,6 @@ class SettingsRepository(
             _profiles.update { it - delta.deletedPackage }
         }
         delta.profiles?.let { loaded -> _profiles.value = loaded }
-        delta.perAppEnabled?.let { _perAppEnabled.value = it }
         if (delta.clearCurrentPackage) {
             _currentPackage.value = null
         } else if (delta.currentPackage != null) {
@@ -177,16 +180,9 @@ class SettingsRepository(
     fun setScreenWidth(value: Int) { _screenWidth.value = value }
     fun setScreenHeight(value: Int) { _screenHeight.value = value }
 
-    fun incrementStats(swipeDelta: Long = 1, elapsedDeltaMs: Long) {
-        _stats.update { it.copy(swipeCount = it.swipeCount + swipeDelta, elapsedMs = it.elapsedMs + elapsedDeltaMs) }
-    }
-    fun resetStats() { _stats.value = ScrollStats.ZERO }
-
     private data class PersistableSnapshot(
         val global: ScrollSettings,
-        val profiles: Map<String, AppProfile>,
-        val perAppEnabled: Boolean,
-        val stats: ScrollStats
+        val profiles: Map<String, AppProfile>
     )
 
     private companion object {

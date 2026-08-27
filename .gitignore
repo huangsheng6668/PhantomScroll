@@ -28,3 +28,6 @@ keystore.properties
 *.keystore
 .codegraph/
 
+# Security-scan tool cache
+.mimosa/
+

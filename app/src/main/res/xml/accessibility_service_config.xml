@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- typeWindowContentChanged is deliberately NOT subscribed: content-change events fire
+     in a flood during our own injected swipes and have no consumer since the smart-interval
+     feature was removed. Subscribing would only burn binder bandwidth and main-thread
+     scheduling for events that get dropped in onAccessibilityEvent. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagDefault"
     android:canPerformGestures="true"

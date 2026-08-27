@@ -2,7 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/panel_root"
-    android:layout_width="240dp"
+    android:layout_width="250dp"
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="@drawable/overlay_card_border"
@@ -126,78 +126,6 @@
             android:ellipsize="end" />
     </LinearLayout>
 
-    <!-- Metric section -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="bottom"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="8dp">
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="已滑动"
-                android:textColor="@color/overlay_subtle"
-                android:textSize="9.5sp"
-                android:fontFamily="monospace"
-                android:textAllCaps="true" />
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="bottom">
-                <TextView
-                    android:id="@+id/metric_count"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0"
-                    android:textColor="@color/overlay_fg"
-                    android:textSize="26sp"
-                    android:textStyle="bold"
-                    android:fontFamily="monospace" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="2dp"
-                    android:layout_marginBottom="3dp"
-                    android:text="次"
-                    android:textColor="@color/overlay_muted"
-                    android:textSize="11sp" />
-            </LinearLayout>
-        </LinearLayout>
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="end">
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="时长"
-                android:textColor="@color/overlay_subtle"
-                android:textSize="9.5sp"
-                android:fontFamily="monospace"
-                android:textAllCaps="true" />
-            <TextView
-                android:id="@+id/metric_elapsed"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="约 0 分钟"
-                android:textColor="@color/overlay_fg"
-                android:textSize="12sp"
-                android:textStyle="bold"
-                android:fontFamily="monospace" />
-        </LinearLayout>
-    </LinearLayout>
-
     <!-- 2×2 param grid -->
     <GridLayout
         android:id="@+id/param_grid"
@@ -309,23 +237,6 @@
             android:textStyle="bold"
             app:cornerRadius="11dp"
             app:backgroundTint="@color/overlay_surface_2"
-            app:strokeColor="@color/overlay_border"
-            app:strokeWidth="1dp" />
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/reset_btn"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="7dp"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:padding="0dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:text="↻"
-            android:textColor="@color/overlay_muted"
-            android:textSize="16sp"
-            app:cornerRadius="11dp"
-            app:backgroundTint="@color/overlay_surface"
             app:strokeColor="@color/overlay_border"
             app:strokeWidth="1dp" />
     </LinearLayout>

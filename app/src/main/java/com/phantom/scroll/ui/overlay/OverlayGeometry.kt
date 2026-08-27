@@ -7,10 +7,23 @@ package com.phantom.scroll.ui.overlay
 object OverlayGeometry {
 
     /** Redesigned panel width (dp). See docs/superpowers/specs/2026-06-22-overlay-redesign-design.md. */
-    const val PANEL_WIDTH_DP = 240
+    const val PANEL_WIDTH_DP = 250
 
     /** Redesigned collapsed bubble width (dp). (20dp per user feedback: ~1/3 of the original 56dp.) */
     const val COLLAPSED_WIDTH_DP = 20
+
+    const val PANEL_WIDTH_RATIO = 0.45f
+    const val PANEL_WIDTH_MIN_DP = 230
+    const val PANEL_WIDTH_MAX_DP = 270
+
+    /** Computes dynamic panel width in px based on screen width and density. */
+    fun panelWidthPx(screenWidthPx: Int, density: Float): Int {
+        if (screenWidthPx <= 0) return (PANEL_WIDTH_DP * density).toInt()
+        val ratioBased = (screenWidthPx * PANEL_WIDTH_RATIO).toInt()
+        val minPx = (PANEL_WIDTH_MIN_DP * density).toInt()
+        val maxPx = (PANEL_WIDTH_MAX_DP * density).toInt()
+        return ratioBased.coerceIn(minPx, maxPx)
+    }
 
     /** Result of computing the snap target after a drag ends. */
     data class SnapTarget(val x: Int, val isLeftEdge: Boolean)

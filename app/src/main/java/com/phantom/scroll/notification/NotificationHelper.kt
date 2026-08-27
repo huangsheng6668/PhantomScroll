@@ -17,6 +17,26 @@ object NotificationHelper {
     const val CHANNEL_ID = "phantom_scroll_service_channel_v3"
     const val NOTIFICATION_ID = 4777
 
+    /**
+     * Process-wide cache of the notification's large icon. The notification is rebuilt on
+     * every isRunning change (toggle / screen off-on restore / auto-pause), and decoding the
+     * full-density launcher bitmap each time churned ~100-400KB on the main thread per update.
+     * The system copies the bitmap when parcelling the notification, so reuse is safe.
+     * Benign race: callers are all on the main thread; a stale race would at worst decode twice.
+     */
+    @Volatile
+    private var cachedLargeIcon: Bitmap? = null
+
+    private fun largeIcon(context: Context): Bitmap? = cachedLargeIcon ?: run {
+        val icon = try {
+            android.graphics.BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
+        } catch (e: Exception) {
+            rasterizeAppIcon(context)
+        }
+        cachedLargeIcon = icon
+        icon
+    }
+
     // Broadcast actions for notification control buttons
     const val ACTION_TOGGLE = "com.phantom.scroll.ACTION_TOGGLE"
     const val ACTION_STOP = "com.phantom.scroll.ACTION_STOP"
@@ -87,19 +107,11 @@ object NotificationHelper {
         val statusText = if (isRunning) "● 滑动中" else "○ 已暂停"
         val actionText = if (isRunning) "暂停" else "开始"
 
-        // The large icon shown in the notification shade. Direct loading from R.mipmap.ic_launcher
-        // avoids system launcher icon cache issues on some ROMs after updating resources.
-        val largeIcon = try {
-            android.graphics.BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
-        } catch (e: Exception) {
-            rasterizeAppIcon(context)
-        }
-
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("PhantomScroll")
             .setContentText("状态: $statusText")
             .setSmallIcon(R.drawable.ic_notification)
-            .setLargeIcon(largeIcon)
+            .setLargeIcon(largeIcon(context))
             .setColor(ContextCompat.getColor(context, R.color.overlay_accent))
             .setContentIntent(mainPendingIntent)
             .setOngoing(true)

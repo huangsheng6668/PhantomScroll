@@ -15,4 +15,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "PhantomScroll"
 include(":app")
+include(":gesture")
 include(":baselineprofile")

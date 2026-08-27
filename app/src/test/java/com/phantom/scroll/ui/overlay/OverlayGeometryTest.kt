@@ -49,7 +49,7 @@ class OverlayGeometryTest {
 
     @Test
     fun panel_and_collapse_width_constants_match_redesign() {
-        assertEquals(240, OverlayGeometry.PANEL_WIDTH_DP)
+        assertEquals(250, OverlayGeometry.PANEL_WIDTH_DP)
         assertEquals(20, OverlayGeometry.COLLAPSED_WIDTH_DP)
     }
 

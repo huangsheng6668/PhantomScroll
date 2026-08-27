@@ -15,9 +15,8 @@ import android.widget.TextView
 import androidx.core.content.res.ResourcesCompat
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.phantom.scroll.R
-import com.phantom.scroll.data.ScrollDirection
+import com.phantom.scroll.gesture.ScrollDirection
 import com.phantom.scroll.data.ScrollSettings
-import com.phantom.scroll.data.ScrollStats
 import com.phantom.scroll.data.SettingsIntent
 import com.phantom.scroll.data.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
@@ -63,8 +62,6 @@ class FloatingOverlayView @JvmOverloads constructor(
     private val foldButton: View
     private val statusPill: TextView
     private val statusMeta: TextView
-    private val metricCount: TextView
-    private val metricElapsed: TextView
     private val cellSpeed: ParamCellView
     private val cellInterval: ParamCellView
     private val cellDistance: ParamCellView
@@ -74,7 +71,6 @@ class FloatingOverlayView @JvmOverloads constructor(
     private val perAppSwitch: MaterialSwitch
     private val perAppLabel: TextView
     private val toggleBtn: com.google.android.material.button.MaterialButton
-    private val resetBtn: com.google.android.material.button.MaterialButton
     // bubble
     private val bubble: BubbleView
 
@@ -94,7 +90,6 @@ class FloatingOverlayView @JvmOverloads constructor(
     private var disallowIntercept = false
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private var snapAnimator: ValueAnimator? = null
-    private var applyingFromFlow = false
     private val perAppChangeListener = CompoundButton.OnCheckedChangeListener { _, checked ->
         repository?.apply(SettingsIntent.PerAppToggled(checked))
     }
@@ -109,7 +104,7 @@ class FloatingOverlayView @JvmOverloads constructor(
      * [init] resolves all findViewByIds, then read on every ACTION_DOWN without rebuilding.
      */
     private val fixedInteractive: List<View> by lazy {
-        listOf(directionCell, toggleBtn, resetBtn, foldButton, settingsButton, perAppSwitch, forgetAppBtn)
+        listOf(directionCell, toggleBtn, foldButton, settingsButton, perAppSwitch, forgetAppBtn)
     }
     /**
      * Named Runnable posted after a snap finishes so we can [removeCallbacks] it on detach.
@@ -123,7 +118,7 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private val density get() = resources.displayMetrics.density
-    private fun panelWidthPx() = (OverlayGeometry.PANEL_WIDTH_DP * density).toInt()
+    private fun panelWidthPx() = OverlayGeometry.panelWidthPx(repository?.screenWidth?.value ?: 0, density)
     private fun collapsedWidthPx() = (OverlayGeometry.COLLAPSED_WIDTH_DP * density).toInt()
 
     init {
@@ -144,8 +139,6 @@ class FloatingOverlayView @JvmOverloads constructor(
         foldButton = findViewById(R.id.fold_button)
         statusPill = findViewById(R.id.status_pill)
         statusMeta = findViewById(R.id.status_meta)
-        metricCount = findViewById(R.id.metric_count)
-        metricElapsed = findViewById(R.id.metric_elapsed)
         cellSpeed = findViewById(R.id.param_cell_speed)
         cellInterval = findViewById(R.id.param_cell_interval)
         cellDistance = findViewById(R.id.param_cell_distance)
@@ -155,7 +148,6 @@ class FloatingOverlayView @JvmOverloads constructor(
         perAppSwitch = findViewById(R.id.perapp_switch)
         perAppLabel = findViewById(R.id.perapp_label)
         toggleBtn = findViewById(R.id.toggle_btn)
-        resetBtn = findViewById(R.id.reset_btn)
 
         configureCells()
 
@@ -163,9 +155,6 @@ class FloatingOverlayView @JvmOverloads constructor(
         bubble.setOnClickListener { panelStateFlow?.value = PanelState.Expanded }
         settingsButton.setOnClickListener { toggleSettings() }
         toggleBtn.setOnClickListener { repository?.toggleRunning() }
-        resetBtn.setOnClickListener {
-            launchOnScope { repository?.resetStats() }
-        }
         forgetAppBtn.setOnClickListener {
             launchOnScope {
                 repository?.apply(SettingsIntent.ForgetActiveApp)
@@ -253,7 +242,6 @@ class FloatingOverlayView @JvmOverloads constructor(
                 combine(repo.screenWidth, repo.screenHeight) { w, h -> w to h }
                     .collect { repositionToBounds(it.first, it.second) }
             }
-            launch { repo.stats.collect { applyStats(it) } }
             launch { repo.perAppEnabled.collect { applyPerAppEnabled(it) } }
             launch { repo.currentPackage.collect { applyCurrentPackage(it) } }
         }
@@ -272,7 +260,12 @@ class FloatingOverlayView @JvmOverloads constructor(
             PanelState.Expanded -> {
                 panelRoot.visibility = VISIBLE
                 bubble.visibility = GONE
-                currentX = OverlayGeometry.edgeX(isLeftEdge, screenWidth, panelWidthPx())
+                val pW = panelWidthPx()
+                if (panelRoot.layoutParams != null && panelRoot.layoutParams.width != pW) {
+                    panelRoot.layoutParams.width = pW
+                    panelRoot.requestLayout()
+                }
+                currentX = OverlayGeometry.edgeX(isLeftEdge, screenWidth, pW)
                 onUpdatePosition?.invoke(currentX, currentY)
             }
             PanelState.Snapping -> {
@@ -283,11 +276,11 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private fun applySettings(s: ScrollSettings) {
-        applyingFromFlow = true
+        // ParamCellView.setValue(fromFlow = true) suppresses its own writeback listener,
+        // so a flow push can never echo back into the repository.
         cellSpeed.setValue(s.duration.toFloat(), fromFlow = true)
         cellInterval.setValue(s.interval.toFloat(), fromFlow = true)
         cellDistance.setValue(s.distanceRatio, fromFlow = true)
-        applyingFromFlow = false
         directionValue.text = if (s.direction == ScrollDirection.DOWN) "↓ 向下" else "↑ 向上"
     }
 
@@ -315,12 +308,6 @@ class FloatingOverlayView @JvmOverloads constructor(
         }
     }
 
-    private fun applyStats(stats: ScrollStats) {
-        metricCount.text = stats.swipeCount.toString()
-        val minutes = Math.round(stats.elapsedMs / 60000.0)
-        metricElapsed.text = "约 $minutes 分钟"
-    }
-
     private fun applyPerAppEnabled(enabled: Boolean) {
         perAppSwitch.setOnCheckedChangeListener(null)
         perAppSwitch.isChecked = enabled
@@ -329,7 +316,8 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private fun applyCurrentPackage(pkg: String?) {
-        statusMeta.text = "前台 · ${pkg ?: "-"}"
+        val shortName = pkg?.substringAfterLast('.')?.ifEmpty { pkg } ?: "-"
+        statusMeta.text = "前台 · $shortName"
         updatePerAppLabelVisibility()
     }
 
@@ -388,23 +376,21 @@ class FloatingOverlayView @JvmOverloads constructor(
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
             snapAnimator?.cancel()
+            // A new press interrupts an in-flight snap: its 270ms completion callback must
+            // go too, or it would fold the panel to the bubble MID-DRAG once it fires.
+            removeCallbacks(snapCompletionRunnable)
             downRawX = ev.rawX; downRawY = ev.rawY
             lastRawX = ev.rawX; lastRawY = ev.rawY
             dragging = false
-            // Interactive children = fixed set (cached) + any currently-expanded slider.
-            // Only the expanded sliders are dynamic, so we keep that tiny per-DOWN filter and
-            // reuse the cached [fixedInteractive] list instead of allocating a fresh list each time.
-            val expandedSlider = when {
-                cellSpeed.isExpanded -> cellSpeed.slider
-                cellInterval.isExpanded -> cellInterval.slider
-                cellDistance.isExpanded -> cellDistance.slider
-                else -> null
-            }
-            disallowIntercept = if (expandedSlider != null && isTouchInsideView(ev, expandedSlider)) {
-                true
-            } else {
+            // Interactive children = fixed set (cached) + ANY currently-expanded slider.
+            // Cells expand independently (two can be open at once), so every expanded
+            // slider must be guarded — protecting only the first would let a drag on the
+            // second be intercepted by the whole-panel drag.
+            disallowIntercept =
+                (cellSpeed.isExpanded && isTouchInsideView(ev, cellSpeed.slider)) ||
+                (cellInterval.isExpanded && isTouchInsideView(ev, cellInterval.slider)) ||
+                (cellDistance.isExpanded && isTouchInsideView(ev, cellDistance.slider)) ||
                 fixedInteractive.any { isTouchInsideView(ev, it) }
-            }
         }
         if (disallowIntercept) return false
         when (ev.actionMasked) {
@@ -489,6 +475,8 @@ class FloatingOverlayView @JvmOverloads constructor(
             }
         }
         snapAnimator?.start()
+        // Replace any completion callback left over from an interrupted earlier snap.
+        removeCallbacks(snapCompletionRunnable)
         postDelayed(snapCompletionRunnable, 270)
     }
 }

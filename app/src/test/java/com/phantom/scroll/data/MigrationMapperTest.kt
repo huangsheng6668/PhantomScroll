@@ -1,5 +1,6 @@
 package com.phantom.scroll.data
 
+import com.phantom.scroll.gesture.ScrollDirection
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

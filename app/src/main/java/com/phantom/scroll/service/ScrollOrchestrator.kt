@@ -2,6 +2,9 @@ package com.phantom.scroll.service
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.Context
+import android.os.PowerManager
+import android.os.SystemClock
 import android.widget.Toast
 import com.phantom.scroll.data.ScrollSettings
 import com.phantom.scroll.data.SettingsRepository
@@ -41,12 +44,39 @@ class ScrollOrchestrator(
      * Dispatcher used for [AccessibilityService.dispatchGesture] (must be the main thread).
      * Defaults to [Dispatchers.Main.immediate]; injectable for tests.
      */
-    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
+    /**
+     * Whether the screen is currently interactive (on). Polled before every dispatch:
+     * scrolling can be (re)started from the notification while the screen is ALREADY off,
+     * in which case no ACTION_SCREEN_OFF broadcast will ever arrive to pause the loop —
+     * this gate is what actually honors the "熄屏自动暂停" spec in that gap. Injectable
+     * for tests.
+     */
+    private val isScreenInteractive: () -> Boolean = {
+        (service.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
+    }
 ) {
     private val TAG = "ScrollOrchestrator"
     private val gestureEngine = GestureEngine()
+    /**
+     * Converts the pure-JVM plans from [gestureEngine] into dispatchable
+     * [android.accessibilityservice.GestureDescription]s. Owns the pooled
+     * `android.graphics.Path` objects — the only Android dependency in the swipe
+     * pipeline (the algorithm itself lives in the `:gesture` module).
+     */
+    private val strokeFactory = GestureDescriptionFactory()
     private val failurePolicy = FailurePolicy(threshold = 3)
     private var loopJob: Job? = null
+
+    // ---- User-touch conflict state (see onUserTouch) ----------------------------
+    // Set from PhantomScrollService's TouchInteractionController observer (API 31+):
+    // while the user's own finger is on the screen we hold off injecting, and
+    // cancellations inside the grace window are attributed to the user instead of the ROM.
+    @Volatile
+    private var userTouching = false
+
+    @Volatile
+    private var lastUserTouchAtMs = 0L
 
     /**
      * `true` once the preferred single continuous stroke has been observed to fail
@@ -75,12 +105,44 @@ class ScrollOrchestrator(
     @Volatile
     private var gestureInFlight = false
 
+    /**
+     * Consecutive loop iterations skipped because [gestureInFlight] never cleared. Crossing
+     * [IN_FLIGHT_FORCE_CLEAR_SKIPS] force-clears the flag (see the overlap guard) — see
+     * [stuckInFlightSkips] there for why waiting forever is worse than the alternative.
+     */
+    private var stuckInFlightSkips = 0
+
     fun start() {
         loopJob = scope.launch {
+            // Rising-edge detection of isRunning: the startup humanization delay fires
+            // once per pause→resume transition, not on every loop iteration.
+            var wasRunning = false
             while (isActive) {
                 try {
-                    repository.isRunning.first { it }
-                    if (!repository.isRunning.value) continue
+                    // While paused, keep the rising-edge flag cleared so the next
+                    // resume gets a fresh startup humanization delay. (Checked before
+                    // first{} because first{} SUSPENDS while the value is false —
+                    // it does not return false.)
+                    if (!repository.isRunning.value) {
+                        wasRunning = false
+                    }
+                    val running = repository.isRunning.first { it }
+                    if (!running) continue
+                    if (!wasRunning) {
+                        wasRunning = true
+                        // Fresh scrolling session: reset the warm-up ramp so the first
+                        // two swipes re-enter gently (the habitual start anchor is kept).
+                        gestureEngine.beginSession()
+                        // Humanized startup pause: a real reader never begins swiping
+                        // the instant the mode is enabled.
+                        val startupDelayMs = withContext(defaultDispatcher) {
+                            gestureEngine.addBioNoise(
+                                STARTUP_DELAY_BASE_MS, STARTUP_DELAY_NOISE_RATIO
+                            ).toLong().coerceIn(STARTUP_DELAY_MIN_MS, STARTUP_DELAY_MAX_MS)
+                        }
+                        PhantomLog.d(TAG, "Startup humanization delay: ${startupDelayMs}ms")
+                        delay(startupDelayMs)
+                    }
 
                     // Guard against gesture overlap: if the previous dispatch's callback has not
                     // arrived yet (e.g. it timed out and the system gesture is still animating),
@@ -92,14 +154,43 @@ class ScrollOrchestrator(
                             delay(OVERLAP_WAIT_STEP_MS)
                             waits++
                         }
-                        // If it genuinely never resolved, abandon this iteration and let the next
-                        // loop tick retry rather than stack gestures.
                         if (gestureInFlight) {
-                            PhantomLog.w(TAG, "Gesture never resolved; skipping iteration.")
-                            delay(500)
-                            continue
+                            stuckInFlightSkips++
+                            if (stuckInFlightSkips >= IN_FLIGHT_FORCE_CLEAR_SKIPS) {
+                                // Escape hatch: the callback is genuinely lost (some ROMs drop
+                                // it entirely). Waiting forever would stall scrolling with no
+                                // failure recorded and therefore no auto-pause — a permanent,
+                                // invisible hang. The residual risk that a zombie gesture is
+                                // still animating is far smaller than that stall, so force-clear
+                                // and let the next dispatch proceed.
+                                PhantomLog.e(
+                                    TAG,
+                                    "Gesture callback lost after $stuckInFlightSkips skipped " +
+                                        "iterations; force-clearing in-flight flag."
+                                )
+                                gestureInFlight = false
+                                stuckInFlightSkips = 0
+                            } else {
+                                // Give a genuinely-late callback one more chance on a later tick.
+                                PhantomLog.w(TAG, "Gesture never resolved; skipping iteration.")
+                                delay(500)
+                                continue
+                            }
                         }
+                    } else {
+                        stuckInFlightSkips = 0
                     }
+
+                    // Never inject while the user's own finger is on the screen — competing
+                    // touches both look robotic and cancel our gesture (which would wrongly
+                    // count as a failure).
+                    waitForUserRelease()
+
+                    // Never inject while the screen is off. Besides the broadcast-driven pause
+                    // (ScreenStateCoordinator), this covers the gaps broadcasts cannot see:
+                    // scrolling started from the notification while the screen was already off,
+                    // or a missed SCREEN_OFF delivery.
+                    awaitScreenInteractive()
 
                     val screenWidth = repository.screenWidth.value
                     val screenHeight = repository.screenHeight.value
@@ -114,12 +205,14 @@ class ScrollOrchestrator(
 
                     // Noise computation on the off-main dispatcher per spec §3 (gaussian sampling
                     // belongs with the rest of the trajectory math), then clamp to slider bounds.
+                    // The inter-swipe wait stays anchored to the user's configured interval:
+                    // this ±8% (2σ-clamped) bio-noise band is the ONLY permitted deviation.
+                    // Deliberately no rest-pause stretch and no content-gated extension —
+                    // both previously produced perceptible multi-second stalls.
                     val noiseInterval = withContext(defaultDispatcher) {
                         gestureEngine.addBioNoise(settings.interval.toFloat(), 0.08f)
                             .toLong().coerceIn(MIN_INTERVAL_MS, MAX_INTERVAL_MS)
                     }
-                    // spec §3.2: count one successful swipe + accumulate the wait as elapsed time.
-                    repository.incrementStats(swipeDelta = 1, elapsedDeltaMs = noiseInterval)
                     delay(noiseInterval)
 
                 } catch (e: CancellationException) {
@@ -142,10 +235,12 @@ class ScrollOrchestrator(
         screenHeight: Int,
         settings: ScrollSettings
     ): Boolean {
-        // 1. Generate the path off the main thread.
+        // 1. Generate the plan off the main thread (pure-JVM math in :gesture).
         //    Preferred: a single continuous stroke encoding the speed curve via
         //    non-uniform point spacing — no seam, no slow-drag tail, best ROM support.
         //    Fallback (degraded): the legacy two-segment continueStroke plan.
+        //    Path building (the only Android touchpoint) lives in [strokeFactory] with
+        //    pooled Path objects — zero allocation per swipe.
         val totalDurationHint: Long
         val buildGesture: () -> GestureDescription
         if (degradedMode) {
@@ -156,18 +251,7 @@ class ScrollOrchestrator(
                 )
             }
             totalDurationHint = plan.accelDuration + plan.decelDuration
-            buildGesture = {
-                // Legacy two continuous strokes: the second continues the first, so
-                // Android treats them as one finger with a speed change at the seam.
-                val accel = GestureDescription.StrokeDescription(
-                    plan.accelPath, 0L, plan.accelDuration, true /* willContinue */
-                )
-                val decel = accel.continueStroke(plan.decelPath, 0L, plan.decelDuration, false)
-                GestureDescription.Builder()
-                    .addStroke(accel)
-                    .addStroke(decel)
-                    .build()
-            }
+            buildGesture = { strokeFactory.build(plan) }
         } else {
             val plan: ContinuousPlan = withContext(defaultDispatcher) {
                 gestureEngine.generateContinuousPlan(
@@ -176,17 +260,28 @@ class ScrollOrchestrator(
                 )
             }
             totalDurationHint = plan.duration
-            buildGesture = {
-                // One stroke; the accelerate/gentle-decelerate profile lives in the
-                // path's point spacing (see GestureEngine.generateContinuousPlan).
-                val stroke = GestureDescription.StrokeDescription(plan.path, 0L, plan.duration)
-                GestureDescription.Builder().addStroke(stroke).build()
-            }
+            buildGesture = { strokeFactory.build(plan) }
         }
 
         // 2. Dispatch on the main thread (dispatchGesture requires it).
         return withContext(mainDispatcher) {
             if (!isActive || !repository.isRunning.value) return@withContext false
+            // Last-moment screen check: the screen may have turned off while the path was
+            // being generated off-main. Skipping is not a failure: the loop retries.
+            if (!isScreenInteractive()) {
+                PhantomLog.d(TAG, "Skipping dispatch — screen not interactive.")
+                return@withContext false
+            }
+            // Last-moment touch check (the user may have started touching while the
+            // path was being generated off-main). Skipping is not a failure: the loop
+            // retries after a short pause.
+            if (userTouching ||
+                (lastUserTouchAtMs > 0L &&
+                    SystemClock.elapsedRealtime() - lastUserTouchAtMs < USER_CANCEL_GRACE_MS)
+            ) {
+                PhantomLog.d(TAG, "Skipping dispatch — user touch in progress or too recent.")
+                return@withContext false
+            }
             val timeoutMs = totalDurationHint + GESTURE_TIMEOUT_SLACK_MS
             gestureInFlight = true
             withTimeoutOrNull(timeoutMs) {
@@ -236,6 +331,18 @@ class ScrollOrchestrator(
     private fun handleCancellation(cont: CancellableContinuation<Boolean>) {
         // Always clear the in-flight flag: a cancellation is a terminal resolution.
         gestureInFlight = false
+        // User-touch attribution: a cancellation that lands while (or just after) the
+        // user is touching the screen is the system arbitrating between two fingers —
+        // NOT a ROM incompatibility. Don't touch the degradation ladder or the
+        // FailurePolicy for it.
+        if (userTouching ||
+            (lastUserTouchAtMs > 0L &&
+                SystemClock.elapsedRealtime() - lastUserTouchAtMs < USER_CANCEL_GRACE_MS)
+        ) {
+            PhantomLog.d(TAG, "Cancellation attributed to user touch — ignored (not a failure).")
+            if (cont.isActive) cont.resume(false)
+            return
+        }
         // Late callback guard: if the continuation is no longer active, the loop already moved
         // on (typically via a timeout). Counting such a residual cancellation would wrongly
         // bump the degradation ladder, so just log and return.
@@ -288,6 +395,45 @@ class ScrollOrchestrator(
         loopJob?.cancel()
     }
 
+    /**
+     * Called from PhantomScrollService's TouchInteractionController observer (API 31+).
+     * While the user's finger is on the screen the loop holds off injecting; the
+     * timestamp also feeds the cancellation grace window in [handleCancellation].
+     */
+    fun onUserTouch(touching: Boolean) {
+        userTouching = touching
+        lastUserTouchAtMs = SystemClock.elapsedRealtime()
+        PhantomLog.d(
+            TAG,
+            if (touching) "User touch started — holding injection." else "User touch ended."
+        )
+    }
+
+    /**
+     * Waits while the user's finger is on the screen, then a short settle cooldown,
+     * before the loop may dispatch again.
+     */
+    private suspend fun waitForUserRelease() {
+        if (!userTouching) return
+        PhantomLog.d(TAG, "User is touching the screen — holding injection.")
+        while (userTouching && currentCoroutineContext().isActive) delay(USER_TOUCH_POLL_MS)
+        delay(USER_TOUCH_COOLDOWN_MS)
+    }
+
+    /**
+     * Holds injection while the screen is not interactive. Once the screen wakes, the
+     * loop resumes normally (the resume edge itself is driven by ScreenStateCoordinator's
+     * USER_PRESENT handling when the pause was broadcast-driven; here we simply stop
+     * injecting into a dark screen).
+     */
+    private suspend fun awaitScreenInteractive() {
+        if (isScreenInteractive()) return
+        PhantomLog.w(TAG, "Screen not interactive — holding injection until wake.")
+        while (!isScreenInteractive() && currentCoroutineContext().isActive) {
+            delay(SCREEN_WAIT_POLL_MS)
+        }
+    }
+
     private companion object {
         /** Consecutive continuous-stroke cancellations before switching to degraded mode. */
         const val DEGRADATION_THRESHOLD = 2
@@ -304,11 +450,36 @@ class ScrollOrchestrator(
         const val OVERLAP_WAIT_STEP_MS = 50L
 
         /**
+         * Consecutive skipped iterations after which a never-resolving [gestureInFlight] is
+         * force-cleared instead of blocking the loop forever. 3 skips ≈ 7.5s worst case —
+         * long enough to rule out any legitimately late callback, short enough that the
+         * stall stays bounded and recoverable.
+         */
+        const val IN_FLIGHT_FORCE_CLEAR_SKIPS = 3
+
+        /** Poll cadence while waiting for the screen to become interactive. */
+        const val SCREEN_WAIT_POLL_MS = 500L
+
+        /**
          * Inter-swipe interval bounds. Aligned with the overlay slider's
          * `valueFrom/valueTo` (500..10000) so the noisy wait never exceeds what the
          * user configured. (Legacy code used 400..12000, which could overrun the max.)
          */
         const val MIN_INTERVAL_MS = 500L
         const val MAX_INTERVAL_MS = 10000L
+
+        // ---- Startup humanization (first swipe after each resume) -----------------
+        const val STARTUP_DELAY_BASE_MS = 650f
+        const val STARTUP_DELAY_NOISE_RATIO = 0.35f
+        const val STARTUP_DELAY_MIN_MS = 400L
+        const val STARTUP_DELAY_MAX_MS = 900L
+
+        // ---- User-touch conflict avoidance ----------------------------------------
+        /** Poll cadence while waiting for the user's finger to lift. */
+        const val USER_TOUCH_POLL_MS = 60L
+        /** Settle pause after the finger lifts before injection resumes. */
+        const val USER_TOUCH_COOLDOWN_MS = 350L
+        /** Cancellations within this window after a touch are attributed to the user. */
+        const val USER_CANCEL_GRACE_MS = 500L
     }
 }

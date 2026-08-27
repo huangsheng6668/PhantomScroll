@@ -4,7 +4,7 @@
 
 **Goal:** 通过引入无状态 `SettingsReducer`、收敛三路持久化为单一 debounce collector、补 `kotlinx-coroutines-test` 并发回归测试，系统性地根治反复出现的 per-app race condition，并清理审计到的全部技术债。
 
-**Architecture:** `SettingsRepository` 重构为三层：纯内存 StateHolder + 无状态 `SettingsReducer`（per-app 一致性规则唯一归属）+ 单一 `debounce(500ms)` 持久化 collector。所有状态变更经 `apply(SettingsIntent)` 单一入口。Service 事件过滤抽为纯函数 `PackageChangeExtractor`。`onDestroy` 的 `runBlocking` 改为 IO 协程非阻塞 await flush。
+**Architecture:** `SettingsRepository` 重构为三层：纯内存 StateHolder + 无状态 `SettingsReducer`（per-app 一致性规则唯一归属）+ 单一 `debounce(500ms)` 持久化 collector。所有状态变更经 `apply(SettingsIntent)` 单一入口。Service 事件过滤抽为纯函数 `PackageChangeExtractor`。`onDestroy` 采用有超时保护的 `runBlocking(Dispatchers.IO)` + `withTimeout(1500L)` 刷盘，主线程同步安全销毁 View 与 Service。
 
 **Tech Stack:** Kotlin + Coroutines/Flow + Preferences DataStore + JUnit4 + `kotlinx-coroutines-test`（`StandardTestDispatcher`/`runTest`/`advanceUntilIdle`，已在 `testImplementation`）。
 
@@ -289,6 +289,7 @@ data class SettingsDelta(
     val global: ScrollSettings? = null,
     val upsertedProfile: AppProfile? = null,
     val deletedPackage: String? = null,
+    val profiles: Map<String, AppProfile>? = null,
     val perAppEnabled: Boolean? = null,
     val currentPackage: String? = null,
     /** Whether currentPackage should be cleared (distinct from setting it to some string). */
@@ -354,6 +355,7 @@ object SettingsReducer {
         }
         return SettingsDelta(
             global = adapted,
+            profiles = loaded.profiles,
             upsertedProfile = null,
             deletedPackage = null,
             perAppEnabled = loaded.perAppEnabled,
@@ -680,6 +682,7 @@ class SettingsRepository(
         if (delta.deletedPackage != null) {
             _profiles.update { it - delta.deletedPackage }
         }
+        delta.profiles?.let { loaded -> _profiles.value = loaded }
         delta.perAppEnabled?.let { _perAppEnabled.value = it }
         if (delta.clearCurrentPackage) {
             _currentPackage.value = null
@@ -697,7 +700,13 @@ class SettingsRepository(
     fun toggleRunning() { _isRunning.value = !_isRunning.value }
 
     fun setScreenWidth(value: Int) { _screenWidth.value = value }
-    fun setScreenHeight(value: Int) { _screenHeight.value = value }
+    fun setScreenHeight(value: Int) {
+        _screenHeight.value = value
+        if (value > 0 && _global.value.distanceRatio == ScrollSettings.DEFAULT.distanceRatio) {
+            val adaptedRatio = (1500f / value).coerceIn(0.3f, 0.95f)
+            _global.update { it.copy(distanceRatio = adaptedRatio) }
+        }
+    }
 
     fun incrementStats(swipeDelta: Long = 1, elapsedDeltaMs: Long) {
         _stats.update { it.copy(swipeCount = it.swipeCount + swipeDelta, elapsedMs = it.elapsedMs + elapsedDeltaMs) }
@@ -794,27 +803,29 @@ Edit `PhantomScrollService.kt`, replace the existing `onDestroy` method (current
         PhantomLog.d(TAG, "Service being destroyed. Flushing settings...")
         repository.isRunning.value = false
 
-        // Non-blocking flush: launch on IO, await flush (with timeout), then tear down.
-        // runBlocking on the main thread was an ANR risk; this keeps shutdown off-main.
-        serviceScope.launch(Dispatchers.IO) {
-            try {
+        // Synchronous main-thread teardown with bounded IO flush (max 1.5s timeout).
+        // Calling windowManager.removeView() and super.onDestroy() inside background IO
+        // coroutines causes CalledFromWrongThreadException and lifecycle violations.
+        try {
+            runBlocking(Dispatchers.IO) {
                 kotlinx.coroutines.withTimeout(1500L) { repository.flush() }
-            } catch (e: Exception) {
-                PhantomLog.e(TAG, "Failed to flush settings on destroy: ${e.message}")
             }
-            if (::floatingWindowController.isInitialized) floatingWindowController.stop()
-            if (::scrollOrchestrator.isInitialized) scrollOrchestrator.stop()
-            if (::eventReceiver.isInitialized) eventReceiver.stop()
-            if (::keepAliveWindow.isInitialized) keepAliveWindow.hide()
-            KeepAliveService.stop(this@PhantomScrollService)
-            NotificationHelper.cancelNotification(this@PhantomScrollService)
-            serviceScope.cancel()
-            super@PhantomScrollService.onDestroy()
+        } catch (e: Exception) {
+            PhantomLog.e(TAG, "Failed to flush settings on destroy: ${e.message}")
         }
+
+        if (::floatingWindowController.isInitialized) floatingWindowController.stop()
+        if (::scrollOrchestrator.isInitialized) scrollOrchestrator.stop()
+        if (::eventReceiver.isInitialized) eventReceiver.stop()
+        if (::keepAliveWindow.isInitialized) keepAliveWindow.hide()
+        KeepAliveService.stop(this)
+        NotificationHelper.cancelNotification(this)
+        serviceScope.cancel()
+        super.onDestroy()
     }
 ```
 
-> 注意：`super.onDestroy()` 移到 IO 协程末尾调用，确保组件停止 + scope 取消后才回调父类。`repository.stopRunning()` 改为 `repository.isRunning.value = false`（API 已收敛）。
+> 注意：`onDestroy()` 在主线程执行，但内部通过 `runBlocking(Dispatchers.IO)` + `withTimeout(1500L)` 限制最大 1.5 秒落盘等待；视图销毁 (`removeView`) 和 `super.onDestroy()` 保留为主线程同步调用，避免 `CalledFromWrongThreadException`。
 
 - [ ] **Step 3: 编译验证**
 
@@ -1397,10 +1408,10 @@ Expected: BUILD SUCCESSFUL，全部测试 PASS（含原有 12 文件 + 新增 3 
 Run: `grep -rn "android.util.Log" app/src/main/java/`
 Expected: 无输出（所有日志走 PhantomLog）。
 
-- [ ] **Step 3: 确认无 runBlocking 在主线程（T2）**
+- [ ] **Step 3: 确认仅在 onDestroy 中存在带 1.5s 超时的 runBlocking(Dispatchers.IO)**
 
 Run: `grep -rn "runBlocking" app/src/main/java/`
-Expected: 无输出。
+Expected: 仅输出 `PhantomScrollService.kt:onDestroy` 中的 1 处调用。
 
 - [ ] **Step 4: 确认死代码已清（T3/T5 + 已删 API）**
 

@@ -8,13 +8,9 @@ package com.phantom.scroll.data
 interface ProfileStore {
     suspend fun loadGlobal(): ScrollSettings
     suspend fun loadProfiles(): Map<String, AppProfile>
-    suspend fun loadPerAppEnabled(): Boolean
-    suspend fun loadStats(): ScrollStats
 
     suspend fun saveGlobal(settings: ScrollSettings)
     suspend fun saveAllProfiles(profiles: Map<String, AppProfile>)
     suspend fun saveProfile(profile: AppProfile)
     suspend fun deleteProfile(packageName: String)
-    suspend fun savePerAppEnabled(enabled: Boolean)
-    suspend fun saveStats(stats: ScrollStats)
 }

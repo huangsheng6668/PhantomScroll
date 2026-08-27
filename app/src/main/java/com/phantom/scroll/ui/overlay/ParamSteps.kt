@@ -1,5 +1,6 @@
 package com.phantom.scroll.ui.overlay
 
+import com.phantom.scroll.gesture.SafeZone
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -29,7 +30,10 @@ object ParamSteps {
 
     /**
      * distanceRatio + screen height(px) → "中距 580px".
-     * Bands: <0.5 短距 · 0.5–0.7499 中距 · ≥0.75 长距. px = ratio × screenH, rounded.
+     * Bands: <0.5 短距 · 0.5–0.7499 中距 · ≥0.75 长距.
+     * px is the PHYSICAL swipe distance the engine produces: ratio × safe-zone height
+     * (see [SafeZone.HEIGHT_RATIO]) — matching what actually lands on screen, not the
+     * full display height.
      */
     fun toDistanceLabel(distanceRatio: Float, screenH: Int): String {
         val band = when {
@@ -37,7 +41,7 @@ object ParamSteps {
             distanceRatio < 0.75f -> "中距"
             else -> "长距"
         }
-        val px = (distanceRatio * screenH).roundToInt()
+        val px = (distanceRatio * SafeZone.HEIGHT_RATIO * screenH).roundToInt()
         return "$band ${px}px"
     }
 }

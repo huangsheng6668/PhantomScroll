@@ -1,5 +1,7 @@
 package com.phantom.scroll.data
 
+import com.phantom.scroll.gesture.ScrollDirection
+
 /**
  * Pure mapping from legacy SharedPreferences keys to the new [ScrollSettings] model.
  * Kept side-effect-free so the migration transformation is unit-testable without DataStore.
