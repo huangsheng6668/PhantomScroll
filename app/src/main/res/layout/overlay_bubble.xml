@@ -3,7 +3,7 @@
      (set in FloatingOverlayView). If this inner view consumed the tap, the expand listener
      would never fire. Visual only = 20dp (per user feedback: ~1/3 of the original 56dp).
      Dark-glass restyle: translucent dark fill + cyan ring + ghost glyph (ic_overlay_ghost). -->
-<FrameLayout xmlns:android="http://schemas.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/bubble_root"
     android:layout_width="20dp"
     android:layout_height="20dp"
