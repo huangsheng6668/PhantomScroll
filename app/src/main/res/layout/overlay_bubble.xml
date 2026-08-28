@@ -1,20 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- bubble_root is NOT clickable: the outer BubbleView owns the click-to-expand listener
      (set in FloatingOverlayView). If this inner view consumed the tap, the expand listener
-     would never fire. Visual only = 20dp (per user feedback: ~1/3 of the original 56dp). -->
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+     would never fire. Visual only = 20dp (per user feedback: ~1/3 of the original 56dp).
+     Dark-glass restyle: translucent dark fill + cyan ring + ghost glyph (ic_overlay_ghost). -->
+<FrameLayout xmlns:android="http://schemas.com/apk/res/android"
     android:id="@+id/bubble_root"
     android:layout_width="20dp"
     android:layout_height="20dp"
     android:background="@drawable/overlay_bubble_bg">
-    <!-- Ghost icon (new cute webtoon mascot from launcher) -->
+    <!-- Ghost glyph, vector twin of the Compose mascot on MainScreen. -->
     <ImageView
         android:id="@+id/bubble_icon"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:padding="2dp"
-        android:src="@mipmap/ic_launcher"
+        android:padding="3dp"
+        android:src="@drawable/ic_overlay_ghost"
         android:scaleType="fitCenter"
         android:clipToOutline="true"
         android:importantForAccessibility="no" />
 </FrameLayout>
+

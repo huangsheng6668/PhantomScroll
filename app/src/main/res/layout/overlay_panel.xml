@@ -63,13 +63,12 @@
             android:background="@drawable/overlay_chip_bg"
             android:clickable="true"
             android:focusable="true">
-            <TextView
+            <ImageView
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center"
-                android:text="⌄"
-                android:textColor="@color/overlay_muted"
-                android:textSize="14sp" />
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_overlay_fold"
+                android:importantForAccessibility="no" />
         </FrameLayout>
         <FrameLayout
             android:id="@+id/settings_button"
@@ -79,13 +78,12 @@
             android:background="@drawable/overlay_chip_bg"
             android:clickable="true"
             android:focusable="true">
-            <TextView
+            <ImageView
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center"
-                android:text="⚙"
-                android:textColor="@color/overlay_muted"
-                android:textSize="13sp" />
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_overlay_tune"
+                android:importantForAccessibility="no" />
         </FrameLayout>
     </LinearLayout>
 
@@ -107,7 +105,7 @@
             android:paddingEnd="9dp"
             android:paddingTop="4dp"
             android:paddingBottom="4dp"
-            android:text="● 运行中"
+            android:text="运行中"
             android:textColor="@color/overlay_accent"
             android:textSize="10.5sp"
             android:fontFamily="monospace"
@@ -202,7 +200,9 @@
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/perapp_switch"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            app:thumbTint="@color/overlay_switch_thumb"
+            app:trackTint="@color/overlay_switch_track" />
     </LinearLayout>
     <TextView
         android:id="@+id/perapp_label"
@@ -211,7 +211,7 @@
         android:gravity="center"
         android:text=""
         android:textColor="@color/overlay_accent"
-        android:textSize="8sp"
+        android:textSize="9sp"
         android:visibility="gone"
         android:paddingBottom="4dp" />
 
@@ -231,13 +231,17 @@
             android:padding="0dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
-            android:text="⏸ 暂停滑动"
+            android:text="开始滑动"
             android:textColor="@color/overlay_fg"
             android:textSize="13sp"
             android:textStyle="bold"
             app:cornerRadius="11dp"
             app:backgroundTint="@color/overlay_surface_2"
             app:strokeColor="@color/overlay_border"
-            app:strokeWidth="1dp" />
+            app:strokeWidth="1dp"
+            app:icon="@drawable/ic_overlay_play"
+            app:iconGravity="textStart"
+            app:iconPadding="6dp"
+            app:iconTint="@color/overlay_on_accent" />
     </LinearLayout>
 </LinearLayout>
