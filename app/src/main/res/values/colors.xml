@@ -12,16 +12,17 @@
 
     <color name="error_red">#FFFF453A</color>
 
-    <!-- ===== Overlay redesign (light/green) ===== -->
-    <color name="overlay_surface">#FFFFFFFF</color>
-    <color name="overlay_surface_2">#FFF4F4F6</color>
-    <color name="overlay_fg">#FF2A2A33</color>
-    <color name="overlay_muted">#FF6E6E76</color>
-    <color name="overlay_subtle">#FF888892</color>
-    <color name="overlay_border">#FFE1E1E6</color>
-    <color name="overlay_accent">#FF1E9E55</color>
-    <color name="overlay_accent_soft">#FFE8F5EC</color>
+    <!-- ===== Overlay (dark glass — unified with the Compose permission page tokens) ===== -->
+    <color name="overlay_surface">#F21E1E24</color>
+    <color name="overlay_surface_2">#FF292933</color>
+    <color name="overlay_surface_3">#FF33333F</color>
+    <color name="overlay_fg">#FFF5F5F7</color>
+    <color name="overlay_muted">#FFA8A8B2</color>
+    <color name="overlay_subtle">#FF7A7A86</color>
+    <color name="overlay_border">#FF3C3C48</color>
+    <color name="overlay_accent">#FF00E5FF</color>
+    <color name="overlay_accent_soft">#2E00E5FF</color>
     <color name="overlay_warning">#FFD98324</color>
-    <color name="overlay_warning_soft">#FFFBEFD9</color>
-    <color name="overlay_on_accent">#FFFFFFFF</color>
+    <color name="overlay_warning_soft">#2ED98324</color>
+    <color name="overlay_on_accent">#FF00262B</color>
 </resources>

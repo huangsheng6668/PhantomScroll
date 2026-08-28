@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.com/apk/res/android"
+    android:width="20dp" android:height="20dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <!-- Ghost body: domed head + zigzag skirt, mirroring the Compose mascot on MainScreen. -->
+    <path android:pathData="M12,3.5 C8.68,3.5 6,6.18 6,9.5 L6,18 L8,16.4 L10,18 L12,16.4 L14,18 L16,16.4 L18,18 L18,9.5 C18,6.18 15.32,3.5 12,3.5 Z"
+        android:fillColor="@color/overlay_accent" />
+    <!-- Punched-out eyes. -->
+    <path android:pathData="M9.6,10 m-1.2,0 a1.2,1.2 0 1,0 2.4,0 a1.2,1.2 0 1,0 -2.4,0 M14.4,10 m-1.2,0 a1.2,1.2 0 1,0 2.4,0 a1.2,1.2 0 1,0 -2.4,0"
+        android:fillColor="#FF1E1E24" />
+</vector>
