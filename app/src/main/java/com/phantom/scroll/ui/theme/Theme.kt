@@ -9,9 +9,10 @@ import androidx.compose.ui.graphics.Color
  * Dark neon-glow theme for the permission guide page (AGENTS.md design spec):
  * background #0F0F12, cards #1E1E24, accents #00E5FF / #2979FF.
  *
- * The native floating overlay keeps its own light/green high-contrast Material theme
- * (res/values/themes.xml → Theme.PhantomScroll.Overlay); the two UI surfaces are
- * intentionally independent and this Compose scheme must not leak into the overlay.
+ * The native floating overlay uses its own Material3 dark theme
+ * (res/values/themes.xml → Theme.PhantomScroll.Overlay) sharing this same palette
+ * (dark glass + cyan accent) via the overlay_* tokens in res/values/colors.xml;
+ * this Compose scheme still must not leak into the overlay at runtime.
  */
 private val DarkColorScheme = darkColorScheme(
     primary = PhantomCyan,
