@@ -1,7 +1,9 @@
 package com.phantom.scroll.ui.overlay
 
+import android.animation.Animator
 import android.animation.ValueAnimator
 import android.content.Context
+import android.content.res.ColorStateList
 import android.util.AttributeSet
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -9,6 +11,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.animation.AlphaAnimation
+import android.view.animation.DecelerateInterpolator
 import android.widget.CompoundButton
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -90,6 +93,12 @@ class FloatingOverlayView @JvmOverloads constructor(
     private var disallowIntercept = false
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private var snapAnimator: ValueAnimator? = null
+    /** Shared decelerate easing for the snap + panel↔bubble transitions (one instance, zero alloc per use). */
+    private val decelerateInterpolator = DecelerateInterpolator(1.3f)
+    /** In-flight expand/collapse crossfade; cancelled by new transitions, touches and detach. */
+    private var transitionAnimator: ValueAnimator? = null
+    /** Direction of the in-flight transition, read by the cancel path to finalize the end state. */
+    private var transitionToCollapsed = false
     private val perAppChangeListener = CompoundButton.OnCheckedChangeListener { _, checked ->
         repository?.apply(SettingsIntent.PerAppToggled(checked))
     }
@@ -118,6 +127,16 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     private val density get() = resources.displayMetrics.density
+
+    private companion object {
+        /** Duration of the panel↔bubble crossfade/scale transition. */
+        const val TRANSITION_DURATION_MS = 160L
+        /** How much the panel shrinks as it fades out (and starts from when fading in). */
+        const val PANEL_EXIT_SCALE_DELTA = 0.08f
+        /** Bubble appears growing from this scale to 1. */
+        const val BUBBLE_ENTER_SCALE_MIN = 0.5f
+    }
+
     private fun panelWidthPx() = OverlayGeometry.panelWidthPx(repository?.screenWidth?.value ?: 0, density)
     private fun collapsedWidthPx() = (OverlayGeometry.COLLAPSED_WIDTH_DP * density).toInt()
 
@@ -219,10 +238,11 @@ class FloatingOverlayView @JvmOverloads constructor(
     }
 
     override fun onDetachedFromWindow() {
-        // Cancel the snap animation and any pending completion callback so the animator /
-        // handler queue don't keep this view alive after WindowManager.removeView().
+        // Cancel the snap animation, any in-flight transition and pending completion callbacks
+        // so no animator / handler queue keeps this view alive after WindowManager.removeView().
         snapAnimator?.cancel()
         snapAnimator = null
+        cancelTransition()
         removeCallbacks(snapCompletionRunnable)
         collectJob?.cancel()
         viewScope?.cancel()
@@ -252,27 +272,118 @@ class FloatingOverlayView @JvmOverloads constructor(
         val screenWidth = repo.screenWidth.value
         when (state) {
             PanelState.Collapsed -> {
-                bubble.visibility = VISIBLE
-                panelRoot.visibility = GONE
                 currentX = OverlayGeometry.edgeX(isLeftEdge, screenWidth, collapsedWidthPx())
                 onUpdatePosition?.invoke(currentX, currentY)
+                animateTransition(toCollapsed = true)
             }
             PanelState.Expanded -> {
                 panelRoot.visibility = VISIBLE
                 bubble.visibility = GONE
                 val pW = panelWidthPx()
-                if (panelRoot.layoutParams != null && panelRoot.layoutParams.width != pW) {
+                if (panelRoot.layoutParams.width != pW) {
                     panelRoot.layoutParams.width = pW
                     panelRoot.requestLayout()
                 }
                 currentX = OverlayGeometry.edgeX(isLeftEdge, screenWidth, pW)
                 onUpdatePosition?.invoke(currentX, currentY)
+                animateTransition(toCollapsed = false)
             }
             PanelState.Snapping -> {
+                cancelTransition()
                 panelRoot.visibility = VISIBLE
                 bubble.visibility = GONE
+                resetTransitionVisuals()
             }
         }
+    }
+
+    /**
+     * Crossfade + scale transition between the expanded panel and the collapsed bubble.
+     * One ValueAnimator also interpolates the window X between the two edge anchors, so the
+     * bubble never teleports when the WRAP_CONTENT window re-anchors at a different width.
+     * Runs only on state changes (never in the gesture hot path) and is cancel-safe: cancel
+     * synchronously fires onAnimationEnd, which snaps visuals to the transition's end state —
+     * always identical to [panelStateFlow]'s latest value, since a new transition always
+     * targets the newest state.
+     */
+    private fun animateTransition(toCollapsed: Boolean) {
+        if (!isAttachedToWindow) {
+            // First applyState from init runs before attach — apply the end state directly.
+            applyStateDirect(toCollapsed)
+            return
+        }
+        cancelTransition()
+        val repo = repository ?: return
+        val screenWidth = repo.screenWidth.value
+        val targetX = OverlayGeometry.edgeX(
+            isLeftEdge, screenWidth,
+            if (toCollapsed) collapsedWidthPx() else panelWidthPx()
+        )
+        val startX = currentX
+        transitionToCollapsed = toCollapsed
+        panelRoot.visibility = VISIBLE
+        bubble.visibility = VISIBLE
+        // Set the start frame synchronously so neither child flashes at its previous alpha
+        // for the frame before the animator's first update.
+        if (toCollapsed) {
+            panelRoot.alpha = 1f; panelRoot.scaleX = 1f; panelRoot.scaleY = 1f
+            bubble.alpha = 0f
+            bubble.scaleX = BUBBLE_ENTER_SCALE_MIN; bubble.scaleY = BUBBLE_ENTER_SCALE_MIN
+        } else {
+            panelRoot.alpha = 0f
+            panelRoot.scaleX = 1f - PANEL_EXIT_SCALE_DELTA; panelRoot.scaleY = 1f - PANEL_EXIT_SCALE_DELTA
+            bubble.alpha = 1f; bubble.scaleX = 1f; bubble.scaleY = 1f
+        }
+        transitionAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = TRANSITION_DURATION_MS
+            interpolator = decelerateInterpolator
+            addUpdateListener { a ->
+                val t = a.animatedValue as Float
+                currentX = (startX + (targetX - startX) * t).toInt()
+                onUpdatePosition?.invoke(currentX, currentY)
+                panelRoot.alpha = if (toCollapsed) 1f - t else t
+                val panelScale = 1f - PANEL_EXIT_SCALE_DELTA * (if (toCollapsed) t else 1f - t)
+                panelRoot.scaleX = panelScale; panelRoot.scaleY = panelScale
+                bubble.alpha = if (toCollapsed) t else 1f - t
+                val bubbleScale = BUBBLE_ENTER_SCALE_MIN + (1f - BUBBLE_ENTER_SCALE_MIN) * (if (toCollapsed) t else 1f - t)
+                bubble.scaleX = bubbleScale; bubble.scaleY = bubbleScale
+            }
+            addListener(object : Animator.AnimatorListener {
+                override fun onAnimationStart(animation: Animator) {}
+                override fun onAnimationRepeat(animation: Animator) {}
+                override fun onAnimationCancel(animation: Animator) {}
+                override fun onAnimationEnd(animation: Animator) {
+                    applyStateDirect(transitionToCollapsed)
+                    if (transitionAnimator === animation) transitionAnimator = null
+                }
+            })
+            start()
+        }
+    }
+
+    /** Applies a transition's end state instantly (visibility + reset of animated properties). */
+    private fun applyStateDirect(toCollapsed: Boolean) {
+        resetTransitionVisuals()
+        if (toCollapsed) {
+            bubble.visibility = VISIBLE
+            panelRoot.visibility = GONE
+        } else {
+            panelRoot.visibility = VISIBLE
+            bubble.visibility = GONE
+        }
+    }
+
+    private fun resetTransitionVisuals() {
+        panelRoot.alpha = 1f; panelRoot.scaleX = 1f; panelRoot.scaleY = 1f
+        bubble.alpha = 1f; bubble.scaleX = 1f; bubble.scaleY = 1f
+    }
+
+    private fun cancelTransition() {
+        val anim = transitionAnimator ?: return
+        transitionAnimator = null
+        // Synchronous: onAnimationEnd fires inline and finalizes to the transition's target,
+        // which always matches the latest panelStateFlow value.
+        anim.cancel()
     }
 
     private fun applySettings(s: ScrollSettings) {
@@ -281,30 +392,41 @@ class FloatingOverlayView @JvmOverloads constructor(
         cellSpeed.setValue(s.duration.toFloat(), fromFlow = true)
         cellInterval.setValue(s.interval.toFloat(), fromFlow = true)
         cellDistance.setValue(s.distanceRatio, fromFlow = true)
-        directionValue.text = if (s.direction == ScrollDirection.DOWN) "↓ 向下" else "↑ 向上"
+        directionValue.text = if (s.direction == ScrollDirection.DOWN) "向下" else "向上"
+        directionValue.setCompoundDrawablesRelativeWithIntrinsicBounds(
+            if (s.direction == ScrollDirection.DOWN) R.drawable.ic_overlay_arrow_down else R.drawable.ic_overlay_arrow_up,
+            0, 0, 0
+        )
     }
 
     private fun applyRunning(running: Boolean) {
-        // status pill: green running / amber paused
-        statusPill.text = if (running) "● 运行中" else "● 已暂停"
+        // status pill: cyan running / amber paused — the pill background encodes the state,
+        // so no text glyph dot is needed.
+        statusPill.text = if (running) "运行中" else "已暂停"
         statusPill.setBackgroundResource(
             if (running) R.drawable.overlay_status_pill_running else R.drawable.overlay_status_pill_paused
         )
         statusPill.setTextColor(ResourcesCompat.getColor(resources, R.color.overlay_accent.takeIf { running } ?: R.color.overlay_warning, null))
-        // main button: running = neutral outline ("暂停滑动"); paused = green filled ("开始滑动")
-        toggleBtn.text = if (running) "⏸ 暂停滑动" else "▶ 开始滑动"
+        // main button: running = neutral chip (暂停滑动); paused = cyan filled (开始滑动).
+        // Icon is a vector (ic_overlay_play/pause); tint follows the text color.
+        toggleBtn.text = if (running) "暂停滑动" else "开始滑动"
+        toggleBtn.setIconResource(if (running) R.drawable.ic_overlay_pause else R.drawable.ic_overlay_play)
         if (running) {
-            toggleBtn.backgroundTintList = android.content.res.ColorStateList.valueOf(
+            toggleBtn.backgroundTintList = ColorStateList.valueOf(
                 ResourcesCompat.getColor(resources, R.color.overlay_surface_2, null))
-            toggleBtn.strokeColor = android.content.res.ColorStateList.valueOf(
+            toggleBtn.strokeColor = ColorStateList.valueOf(
                 ResourcesCompat.getColor(resources, R.color.overlay_border, null))
             toggleBtn.strokeWidth = density.toInt().coerceAtLeast(1) // 1dp outline
-            toggleBtn.setTextColor(ResourcesCompat.getColor(resources, R.color.overlay_fg, null))
+            val fg = ResourcesCompat.getColor(resources, R.color.overlay_fg, null)
+            toggleBtn.setTextColor(fg)
+            toggleBtn.iconTint = ColorStateList.valueOf(fg)
         } else {
-            toggleBtn.backgroundTintList = android.content.res.ColorStateList.valueOf(
+            toggleBtn.backgroundTintList = ColorStateList.valueOf(
                 ResourcesCompat.getColor(resources, R.color.overlay_accent, null))
             toggleBtn.strokeWidth = 0
-            toggleBtn.setTextColor(ResourcesCompat.getColor(resources, R.color.overlay_on_accent, null))
+            val onAccent = ResourcesCompat.getColor(resources, R.color.overlay_on_accent, null)
+            toggleBtn.setTextColor(onAccent)
+            toggleBtn.iconTint = ColorStateList.valueOf(onAccent)
         }
     }
 
@@ -379,6 +501,9 @@ class FloatingOverlayView @JvmOverloads constructor(
             // A new press interrupts an in-flight snap: its 270ms completion callback must
             // go too, or it would fold the panel to the bubble MID-DRAG once it fires.
             removeCallbacks(snapCompletionRunnable)
+            // Same for an in-flight expand/collapse crossfade: finalize it to its target
+            // state so dragging starts from a stable, consistent window size.
+            cancelTransition()
             downRawX = ev.rawX; downRawY = ev.rawY
             lastRawX = ev.rawX; lastRawY = ev.rawY
             dragging = false
@@ -467,6 +592,7 @@ class FloatingOverlayView @JvmOverloads constructor(
         val startY = currentY
         snapAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 250
+            interpolator = decelerateInterpolator
             addUpdateListener { a ->
                 val t = a.animatedValue as Float
                 currentX = (startX + (target.x - startX) * t).toInt()
