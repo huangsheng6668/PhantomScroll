@@ -101,4 +101,4 @@
 | 6 | 手势引擎 | `GestureEngine` + `SpeedCurve` | 贝塞尔曲线、Bio-Noise、对象池、采样策略、**双段连续 Stroke 非对称速度曲线、贝塞尔重采样像素抖动、起点随机化** |
 | 7 | 悬浮窗 UI | `FloatingOverlayView` | 原生自定义视图、拖拽吸附状态机、交互保护拦截 |
 | 8 | 通知管理 | `NotificationHelper` | 通知渠道、前台状态通知构建 |
-| 9 | 样式系统 | `res/values/colors.xml` | 悬浮窗浅色/绿色高对比度配色（`overlay_*`）+ Compose 权限页暗黑色值（`dark_surface`/`phantom_*`）及 Drawable 样式包 |
+| 9 | 样式系统 | `res/values/colors.xml` | 悬浮窗暗黑玻璃拟态配色（`overlay_*`，与主界面 `phantom_*` 同源：`#1E1E24` 卡片 / `#00E5FF` 青色强调 / 琥珀 `#D98324` 暂停警示）+ Compose 权限页暗黑色值（`dark_surface`/`phantom_*`）及 Drawable 矢量图标样式包 |
